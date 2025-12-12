@@ -4,7 +4,7 @@ import os
 import tempfile
 import requests
 import xarray as xr
-import datetime as dt  # <-- needed for run-cycle logic
+import datetime as dt
 
 
 HRDPS_BASE = "https://dd.weather.gc.ca/today/model_hrdps/continental/2.5km"
@@ -143,7 +143,9 @@ def to_earth_like_json(u, v):
         else:
             cycle_hour = 18
     
+        # Return a datetime with that cycle hour
         return now.replace(hour=cycle_hour, minute=0, second=0, microsecond=0)
+
     
 
 
@@ -187,6 +189,16 @@ def to_earth_like_json(u, v):
 
 
 def main():
+    run_time = pick_run_cycle()
+    print("Using HRDPS run cycle:", run_time.isoformat())
+
+    # For now just lead_hour = 0 as a test
+    lead_hour = 0
+    ugrd_url = build_hrdps_url(run_time, "UGRD", lead_hour)
+    vgrd_url = build_hrdps_url(run_time, "VGRD", lead_hour)
+
+
+    
     run_time = pick_run_cycle()
     print("Using HRDPS run cycle:", run_time.isoformat())
 
