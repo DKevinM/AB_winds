@@ -7,7 +7,9 @@ import xarray as xr
 import datetime as dt  # <-- needed for run-cycle logic
 
 
-HRDPS_BASE = "https://dd.weather.gc.ca/model_hrdps/continental/2.5km/grib2"
+HRDPS_BASE = "https://dd.weather.gc.ca/today/model_hrdps/continental/2.5km"
+
+
 
 # Rough Alberta bounding box
 AB_LAT_MIN, AB_LAT_MAX = 48.5, 60.5
@@ -121,55 +123,84 @@ def to_earth_like_json(u, v):
         "v": v_vals
     }
 
+    
 
-def build_hrdps_url(run_time, var, lead_hour):
-    """
-    var        = 'UGRD' or 'VGRD'
-    lead_hour  = integer forecast hour (1, 2, 3...)
-    """
-    cycle = f"{run_time.hour:02d}"          # 00, 06, 12, 18
-    date_str = run_time.strftime("%Y%m%d")  # e.g., 20251212
+    def pick_run_cycle(now=None):
+        """
+        Pick the most recent HRDPS cycle time (00, 06, 12, 18 UTC)
+        based on current UTC time.
+        """
+        if now is None:
+            now = dt.datetime.utcnow()
+    
+        hour = now.hour
+        if hour < 6:
+            cycle_hour = 0
+        elif hour < 12:
+            cycle_hour = 6
+        elif hour < 18:
+            cycle_hour = 12
+        else:
+            cycle_hour = 18
+    
+        return now.replace(hour=cycle_hour, minute=0, second=0, microsecond=0)
+    
 
-    # HRDPS file naming pattern:
-    # {DATE}{CYCLE}_MSC_HRDPS_{VAR}_AGL-10m_RLatLon0.0225_PT{HOUR}H.grib2
-    filename = (
-        f"{date_str}{cycle}_MSC_HRDPS_{var}_AGL-10m_RLatLon0.0225_PT{lead_hour:03d}H.grib2"
-    )
-
-    # HRDPS directory structure:
-    # model_hrdps/.../grib2/{cycle}/{lead_hour}/{filename}
-    url = f"{HRDPS_BASE}/{cycle}/{lead_hour:03d}/{filename}"
-    return url
 
 
-def pick_run_cycle(now_utc=None):
-    """
-    Pick the most recent 6-hourly HRDPS cycle (00, 06, 12, 18 UTC)
-    based on 'now_utc' (defaults to current UTC).
-    """
-    if now_utc is None:
-        now_utc = dt.datetime.utcnow()
 
-    base_hour = (now_utc.hour // 6) * 6     # 0, 6, 12, 18
-    return dt.datetime(now_utc.year, now_utc.month, now_utc.day, base_hour)
+
+    def build_hrdps_url(run_time, var: str, lead_hour: int) -> str:
+        """
+        Build an HRDPS URL for a given run time, variable and forecast hour.
+    
+        - var: 'UGRD' or 'VGRD'
+        - lead_hour: 0, 1, 2, 3, ...  (forecast hour)
+        """
+    
+        # YYYYMMDD
+        date_str = run_time.strftime("%Y%m%d")
+    
+        # Cycle directory: '00', '06', '12', '18'
+        cycle_hour = run_time.hour
+        cycle_dir = f"{cycle_hour:02d}"          # e.g. '00', '06', '12', '18'
+    
+        # Tag that goes into the filename: '00Z', '06Z', ...
+        cycle_tag = f"{cycle_dir}Z"
+    
+        # Forecast hour directory and code: '000', '001', '002', ...
+        lead_str = f"{lead_hour:03d}"           # e.g. '000', '001'
+    
+        filename = (
+            f"{date_str}T{cycle_tag}_MSC_HRDPS_{var}_AGL-10m_RLatLon0.0225_PT{lead_str}H.grib2"
+        )
+    
+        # Final URL:
+        #   {BASE}/{cycle_dir}/{lead_str}/{filename}
+        url = f"{HRDPS_BASE}/{cycle_dir}/{lead_str}/{filename}"
+        return url
+
+
+
+
+
 
 
 def main():
-    # Option A: allow explicit override via env vars (optional)
-    env_ugrd = os.environ.get("HRDPS_UGRD_URL")
-    env_vgrd = os.environ.get("HRDPS_VGRD_URL")
+    run_time = pick_run_cycle()
+    print("Using HRDPS run cycle:", run_time.isoformat())
 
-    if env_ugrd and env_vgrd:
-        ugrd_url = env_ugrd
-        vgrd_url = env_vgrd
-        print("Using HRDPS URLs from environment.")
-    else:
-        # Option B: auto-build URLs based on latest cycle
-        run_time = pick_run_cycle()
-        print("Using HRDPS run cycle:", run_time.isoformat())
+    # Lead hours you care about: 0, 1, 2, 3
+    lead_hours = [0, 1, 2, 3]
 
-        ugrd_url = build_hrdps_url(run_time, "UGRD", lead_hour=1)
-        vgrd_url = build_hrdps_url(run_time, "VGRD", lead_hour=1)
+    # For now, just build for lead_hour = 0 to prove it works.
+    # Later you can loop over lead_hours and either:
+    # - write multiple JSONs (AB_wind_000.json, AB_wind_001.json, ...)
+    # - or pack all times into one JSON structure.
+
+    lead_hour = 0   # test
+    ugrd_url = build_hrdps_url(run_time, "UGRD", lead_hour)
+    vgrd_url = build_hrdps_url(run_time, "VGRD", lead_hour)
 
     print("UGRD URL:", ugrd_url)
     print("VGRD URL:", vgrd_url)
@@ -192,7 +223,6 @@ def main():
         print(f"Wrote {out_path}")
 
     finally:
-        # Clean up temp files
         if u_path and os.path.exists(u_path):
             os.remove(u_path)
         if v_path and os.path.exists(v_path):
