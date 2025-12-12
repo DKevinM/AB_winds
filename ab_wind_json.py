@@ -5,9 +5,15 @@ import tempfile
 import requests
 import xarray as xr
 
+
+
+HRDPS_BASE = "https://dd.weather.gc.ca/model_hrdps/continental/2.5km/grib2"
+
+
 # Rough Alberta bounding box
 AB_LAT_MIN, AB_LAT_MAX = 48.5, 60.5
 AB_LON_MIN, AB_LON_MAX = -120.0, -108.0  # adjust if you want more margin
+
 
 
 def download_to_temp(url: str) -> str:
@@ -118,14 +124,43 @@ def to_earth_like_json(u, v):
     }
 
 
+def build_hrdps_url(run_time, var, lead_hour):
+    """
+    var        = 'UGRD' or 'VGRD'
+    lead_hour  = integer forecast hour (1, 2, 3...)
+    """
+    cycle = f"{run_time.hour:02d}"          # 00, 06, 12, 18
+    date_str = run_time.strftime("%Y%m%d")   # 20251212
+
+    # HRDPS file naming pattern:
+    # {DATE}{CYCLE}_MSC_HRDPS_{VAR}_AGL-10m_RLatLon0.0225_PT{HOUR}H.grib2
+
+    filename = (
+        f"{date_str}{cycle}_MSC_HRDPS_{var}_AGL-10m_RLatLon0.0225_PT{lead_hour:03d}H.grib2"
+    )
+
+    # HRDPS directory structure:
+    # model_hrdps/.../grib2/{cycle}/{lead_hour}/{filename}
+    url = f"{HRDPS_BASE}/{cycle}/{lead_hour:03d}/{filename}"
+    return url
+
+
+
+
+
 def main():
     # For now, point to explicit HRDPS UGRD/VGRD URLs.
     # Later we can auto-build these based on current UTC + run hour.
     #
     # You can also pass them in via environment variables to keep YAML cleaner:
     #   HRDPS_, HRDPS_VGRD_URL
-    ugrd_url = os.environ.get("HRDPS_UGRD_URL")
-    vgrd_url = os.environ.get("HRDPS_VGRD_URL")
+    run_time = pick_run_cycle()
+    
+    ugrd_url = build_hrdps_url(run_time, "UGRD", lead_hour=1)
+    vgrd_url = build_hrdps_url(run_time, "VGRD", lead_hour=1)
+    
+    print("UGRD URL:", ugrd_url)
+    print("VGRD URL:", vgrd_url)
 
     if not ugrd_url or not vgrd_url:
         raise SystemExit("HRDPS_UGRD_URL and HRDPS_VGRD_URL environment variables must be set")
