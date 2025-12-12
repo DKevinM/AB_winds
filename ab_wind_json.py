@@ -123,9 +123,9 @@ def main():
     # Later we can auto-build these based on current UTC + run hour.
     #
     # You can also pass them in via environment variables to keep YAML cleaner:
-    #   HRDPS_UGRD_URL, HRDPS_VGRD_URL
-    ugrd_url = os.environ.get("https://dd.weather.gc.ca/today/model_hrdps/continental/2.5km/12/001/20251212T12Z_MSC_HRDPS_UGRD_AGL-10m_RLatLon0.0225_PT001H.grib2")
-    vgrd_url = os.environ.get("https://dd.weather.gc.ca/today/model_hrdps/continental/2.5km/12/001/20251212T12Z_MSC_HRDPS_VGRD_AGL-10m_RLatLon0.0225_PT001H.grib2")
+    #   HRDPS_, HRDPS_VGRD_URL
+    ugrd_url = os.environ.get("HRDPS_UGRD_URL")
+    vgrd_url = os.environ.get("HRDPS_VGRD_URL")
 
     if not ugrd_url or not vgrd_url:
         raise SystemExit("HRDPS_UGRD_URL and HRDPS_VGRD_URL environment variables must be set")
