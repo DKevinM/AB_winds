@@ -1,15 +1,13 @@
-name: Build AB Wind JSON
+name: Build AB wind JSON
 
 on:
-  workflow_dispatch:    # allow manual run
   schedule:
-    - cron: "0 */6 * * *"   # every 6 hours (UTC)
-
-permissions:
-  contents: write       # needed so the workflow can commit back to the repo
+    # Every 3 hours, adjust as you like
+    - cron: "0 */3 * * *"
+  workflow_dispatch: {}
 
 jobs:
-  build-wind-json:
+  build-ab-wind-json:
     runs-on: ubuntu-latest
 
     steps:
@@ -19,40 +17,26 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-
-      - name: Install system dependencies for cfgrib/eccodes
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libeccodes0 libeccodes-dev
+          python-version: "3.11"
 
       - name: Install Python dependencies
         run: |
-          pip install --upgrade pip
-          pip install xarray cfgrib eccodes
-
-      # OPTION A: for now, assume GRIB is already in the repo
-      # (e.g., at gfs_10m_wind_example.grib2)
-      # Later we can add a step that downloads the latest GFS GRIB.
+          python -m pip install --upgrade pip
+          pip install xarray cfgrib eccodes requests
 
       - name: Build AB_wind_latest.json
+        env:
+          # TODO: put real HRDPS URLs here
+          HRDPS_UGRD_URL: "https://dd.weather.gc.ca/....UGRD_AGL-10m....grib2"
+          HRDPS_VGRD_URL: "https://dd.weather.gc.ca/....VGRD_AGL-10m....grib2"
         run: |
-          mkdir -p data
           python ab_wind_json.py
 
-      - name: Commit and push updated JSON (if changed)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit and push (if changed)
         run: |
-          # If nothing changed, exit gracefully
-          if git diff --quiet data/AB_wind_latest.json; then
-            echo "No changes in AB_wind_latest.json – nothing to commit."
-            exit 0
-          fi
-
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
           git add data/AB_wind_latest.json
-          git commit -m "Update AB wind JSON"
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "Update AB wind JSON [skip ci]"
           git push
