@@ -2,6 +2,7 @@
 import json
 import datetime as dt
 import xarray as xr
+import sys
 
 # Rough Alberta bounding box
 AB_LAT_MIN, AB_LAT_MAX = 48.5, 60.5
