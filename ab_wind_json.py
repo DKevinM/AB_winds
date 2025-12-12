@@ -4,16 +4,14 @@ import os
 import tempfile
 import requests
 import xarray as xr
-
+import datetime as dt  # <-- needed for run-cycle logic
 
 
 HRDPS_BASE = "https://dd.weather.gc.ca/model_hrdps/continental/2.5km/grib2"
 
-
 # Rough Alberta bounding box
 AB_LAT_MIN, AB_LAT_MAX = 48.5, 60.5
 AB_LON_MIN, AB_LON_MAX = -120.0, -108.0  # adjust if you want more margin
-
 
 
 def download_to_temp(url: str) -> str:
@@ -40,7 +38,7 @@ def open_hrdps_10m_uv(path_u: str, path_v: str):
     Open HRDPS 10 m U/V GRIB2 files and return (u10, v10) as xarray DataArrays.
 
     Assumes:
-    - TypeOfLevel heightAboveGround
+    - typeOfLevel = heightAboveGround
     - level = 10 m
     """
     filter_kwargs = {
@@ -130,11 +128,10 @@ def build_hrdps_url(run_time, var, lead_hour):
     lead_hour  = integer forecast hour (1, 2, 3...)
     """
     cycle = f"{run_time.hour:02d}"          # 00, 06, 12, 18
-    date_str = run_time.strftime("%Y%m%d")   # 20251212
+    date_str = run_time.strftime("%Y%m%d")  # e.g., 20251212
 
     # HRDPS file naming pattern:
     # {DATE}{CYCLE}_MSC_HRDPS_{VAR}_AGL-10m_RLatLon0.0225_PT{HOUR}H.grib2
-
     filename = (
         f"{date_str}{cycle}_MSC_HRDPS_{var}_AGL-10m_RLatLon0.0225_PT{lead_hour:03d}H.grib2"
     )
@@ -145,25 +142,37 @@ def build_hrdps_url(run_time, var, lead_hour):
     return url
 
 
+def pick_run_cycle(now_utc=None):
+    """
+    Pick the most recent 6-hourly HRDPS cycle (00, 06, 12, 18 UTC)
+    based on 'now_utc' (defaults to current UTC).
+    """
+    if now_utc is None:
+        now_utc = dt.datetime.utcnow()
 
+    base_hour = (now_utc.hour // 6) * 6     # 0, 6, 12, 18
+    return dt.datetime(now_utc.year, now_utc.month, now_utc.day, base_hour)
 
 
 def main():
-    # For now, point to explicit HRDPS UGRD/VGRD URLs.
-    # Later we can auto-build these based on current UTC + run hour.
-    #
-    # You can also pass them in via environment variables to keep YAML cleaner:
-    #   HRDPS_, HRDPS_VGRD_URL
-    run_time = pick_run_cycle()
-    
-    ugrd_url = build_hrdps_url(run_time, "UGRD", lead_hour=1)
-    vgrd_url = build_hrdps_url(run_time, "VGRD", lead_hour=1)
-    
+    # Option A: allow explicit override via env vars (optional)
+    env_ugrd = os.environ.get("HRDPS_UGRD_URL")
+    env_vgrd = os.environ.get("HRDPS_VGRD_URL")
+
+    if env_ugrd and env_vgrd:
+        ugrd_url = env_ugrd
+        vgrd_url = env_vgrd
+        print("Using HRDPS URLs from environment.")
+    else:
+        # Option B: auto-build URLs based on latest cycle
+        run_time = pick_run_cycle()
+        print("Using HRDPS run cycle:", run_time.isoformat())
+
+        ugrd_url = build_hrdps_url(run_time, "UGRD", lead_hour=1)
+        vgrd_url = build_hrdps_url(run_time, "VGRD", lead_hour=1)
+
     print("UGRD URL:", ugrd_url)
     print("VGRD URL:", vgrd_url)
-
-    if not ugrd_url or not vgrd_url:
-        raise SystemExit("HRDPS_UGRD_URL and HRDPS_VGRD_URL environment variables must be set")
 
     u_path = v_path = None
     try:
