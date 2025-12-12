@@ -1,73 +1,95 @@
-# build_ab_wind_json.py
+# ab_wind_json.py
 import json
-import datetime as dt
+import os
+import tempfile
+import requests
 import xarray as xr
-import sys
 
 # Rough Alberta bounding box
 AB_LAT_MIN, AB_LAT_MAX = 48.5, 60.5
 AB_LON_MIN, AB_LON_MAX = -120.0, -108.0  # adjust if you want more margin
 
-def open_gfs_grib(path):
-    """
-    Open a GFS GRIB2 file and extract 10 m u/v wind components as xarray DataArrays.
-    """
-    ds = xr.open_dataset(
-        path,
-        engine="cfgrib",
-        backend_kwargs={
-            "filter_by_keys": {
-                "typeOfLevel": "heightAboveGround",
-                "level": 10
-            }
-        },
-    )
-    # Variable names may be 'u10', 'v10', or '10u', '10v' depending on source
-    for u_name in ["u10", "10u", "UGRD"]:
-        if u_name in ds:
-            u = ds[u_name]
-            break
-    else:
-        raise ValueError("No U-wind found")
 
-    for v_name in ["v10", "10v", "VGRD"]:
-        if v_name in ds:
-            v = ds[v_name]
-            break
-    else:
-        raise ValueError("No V-wind found")
+def download_to_temp(url: str) -> str:
+    """
+    Download a GRIB2 file from 'url' into a temporary file.
+    Returns the file path. Caller is responsible for os.remove(path).
+    """
+    print(f"Downloading: {url}")
+    resp = requests.get(url, stream=True)
+    resp.raise_for_status()
+
+    fd, path = tempfile.mkstemp(suffix=".grib2")
+    with os.fdopen(fd, "wb") as f:
+        for chunk in resp.iter_content(chunk_size=1024 * 1024):
+            if chunk:
+                f.write(chunk)
+
+    print(f"Saved GRIB2 to temp file: {path}")
+    return path
+
+
+def open_hrdps_10m_uv(path_u: str, path_v: str):
+    """
+    Open HRDPS 10 m U/V GRIB2 files and return (u10, v10) as xarray DataArrays.
+
+    Assumes:
+    - TypeOfLevel heightAboveGround
+    - level = 10 m
+    """
+    filter_kwargs = {
+        "filter_by_keys": {
+            "typeOfLevel": "heightAboveGround",
+            "level": 10
+        }
+    }
+
+    ds_u = xr.open_dataset(path_u, engine="cfgrib", backend_kwargs=filter_kwargs)
+    ds_v = xr.open_dataset(path_v, engine="cfgrib", backend_kwargs=filter_kwargs)
+
+    # Be robust to variable names
+    def pick_var(ds, candidates):
+        for name in candidates:
+            if name in ds:
+                return ds[name]
+        raise ValueError(f"None of {candidates} found in dataset variables: {list(ds.data_vars)}")
+
+    u = pick_var(ds_u, ["u10", "10u", "UGRD"])
+    v = pick_var(ds_v, ["v10", "10v", "VGRD"])
 
     # Subset to Alberta bounding box
-    sub = ds.sel(
-        latitude=slice(AB_LAT_MAX, AB_LAT_MIN),   # note: descending lat
-        longitude=slice(AB_LON_MIN % 360, AB_LON_MAX % 360)
+    # HRDPS longitudes are usually 0–360; convert our mins/max to that range
+    lon_min = AB_LON_MIN % 360
+    lon_max = AB_LON_MAX % 360
+
+    sub_u = u.sel(
+        latitude=slice(AB_LAT_MAX, AB_LAT_MIN),  # lat typically descending
+        longitude=slice(lon_min, lon_max)
+    )
+    sub_v = v.sel(
+        latitude=slice(AB_LAT_MAX, AB_LAT_MIN),
+        longitude=slice(lon_min, lon_max)
     )
 
-    u_sub = sub[u.name]
-    v_sub = sub[v.name]
+    # Use the first time slice (extend later if you want multiple times)
+    if "time" in sub_u.dims:
+        sub_u = sub_u.isel(time=0)
+    if "time" in sub_v.dims:
+        sub_v = sub_v.isel(time=0)
 
-    # Use the first time slice (you can extend to multiple later)
-    if "time" in u_sub.dims:
-        u_sub = u_sub.isel(time=0)
-        v_sub = v_sub.isel(time=0)
-
-    return u_sub, v_sub
+    return sub_u, sub_v
 
 
 def to_earth_like_json(u, v):
     """
     Convert u/v DataArrays into a compact JSON structure the JS side can read.
     """
+    # Ensure shapes match
+    if u.shape != v.shape:
+        raise ValueError(f"u and v shapes differ: {u.shape} vs {v.shape}")
+
     lats = u["latitude"].values
     lons = u["longitude"].values
-
-    # Ensure consistent shapes
-    assert u.shape == v.shape
-
-    # We’ll flatten row-major (lat index fastest or lon fastest – just keep consistent)
-    # Here: lat index first, lon second
-    u_vals = u.values.astype("float32").tolist()
-    v_vals = v.values.astype("float32").tolist()
 
     meta = {
         "lat_min": float(lats.min()),
@@ -83,6 +105,10 @@ def to_earth_like_json(u, v):
         }
     }
 
+    # Convert to native Python lists (float32 to keep reasonably small)
+    u_vals = u.values.astype("float32").tolist()
+    v_vals = v.values.astype("float32").tolist()
+
     return {
         "meta": meta,
         "lats": lats.tolist(),
@@ -93,19 +119,40 @@ def to_earth_like_json(u, v):
 
 
 def main():
-    # --- 1) Decide which GFS file to use ---
-    # For now, just point to a local GRIB2 you’ve downloaded.
-    grib_path = "gfs_10m_wind_example.grib2"
+    # For now, point to explicit HRDPS UGRD/VGRD URLs.
+    # Later we can auto-build these based on current UTC + run hour.
+    #
+    # You can also pass them in via environment variables to keep YAML cleaner:
+    #   HRDPS_UGRD_URL, HRDPS_VGRD_URL
+    ugrd_url = os.environ.get("https://dd.weather.gc.ca/today/model_hrdps/continental/2.5km/12/001/20251212T12Z_MSC_HRDPS_UGRD_AGL-10m_RLatLon0.0225_PT001H.grib2")
+    vgrd_url = os.environ.get("https://dd.weather.gc.ca/today/model_hrdps/continental/2.5km/12/001/20251212T12Z_MSC_HRDPS_VGRD_AGL-10m_RLatLon0.0225_PT001H.grib2")
 
-    u10, v10 = open_gfs_grib(grib_path)
-    js = to_earth_like_json(u10, v10)
+    if not ugrd_url or not vgrd_url:
+        raise SystemExit("HRDPS_UGRD_URL and HRDPS_VGRD_URL environment variables must be set")
 
-    # Name output as "latest" for now – GitHub Actions can overwrite it
-    out_path = "data/AB_wind_latest.json"
-    with open(out_path, "w") as f:
-        json.dump(js, f)
+    u_path = v_path = None
+    try:
+        u_path = download_to_temp(ugrd_url)
+        v_path = download_to_temp(vgrd_url)
 
-    print("Wrote", out_path)
+        u10, v10 = open_hrdps_10m_uv(u_path, v_path)
+        js = to_earth_like_json(u10, v10)
+
+        out_dir = "data"
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, "AB_wind_latest.json")
+
+        with open(out_path, "w") as f:
+            json.dump(js, f)
+
+        print(f"Wrote {out_path}")
+
+    finally:
+        # Clean up temp files
+        if u_path and os.path.exists(u_path):
+            os.remove(u_path)
+        if v_path and os.path.exists(v_path):
+            os.remove(v_path)
 
 
 if __name__ == "__main__":
