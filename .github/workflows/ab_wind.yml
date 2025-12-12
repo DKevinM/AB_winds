@@ -25,10 +25,6 @@ jobs:
           pip install xarray cfgrib eccodes requests
 
       - name: Build AB_wind_latest.json
-        env:
-          HRDPS_UGRD_URL: "https://dd.weather.gc.ca/today/model_hrdps/continental/2.5km/12/001/20251212T12Z_MSC_HRDPS_UGRD_AGL-10m_RLatLon0.0225_PT001H.grib2"
-          HRDPS_VGRD_URL: "https://dd.weather.gc.ca/today/model_hrdps/continental/2.5km/12/001/20251212T12Z_MSC_HRDPS_VGRD_AGL-10m_RLatLon0.0225_PT001H.grib2"
-
         run: |
           python ab_wind_json.py
 
