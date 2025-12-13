@@ -89,41 +89,34 @@
 
   // Nearest-neighbour interpolation of u/v at a given lat/lon.
   // Fine for testing; we can upgrade to bilinear later.
+
   function interpolateWind(lat, lon) {
     if (!windField || !windField.meta) return null;
   
     const meta = windField.meta;
-  
-    // lats/lons arrays exist, but we won't scan them anymore
     const nlat = meta.nlat;
     const nlon = meta.nlon;
     if (!nlat || !nlon) return null;
   
-    // Handle 0..360 grids if needed
+    // Convert lon to 0..360 if the grid is 0..360
     let lonQ = lon;
-    if (meta.lon_min > 180) {           // crude indicator it's 0..360
-      if (lonQ < 0) lonQ += 360;
-    }
+    if (meta.lon_min > 180 && lonQ < 0) lonQ += 360;
   
-    // Compute fractional indices
     const latMin = meta.lat_min;
     const latMax = meta.lat_max;
     const lonMin = meta.lon_min;
     const lonMax = meta.lon_max;
   
-    // Guard bounds
+    // bounds guard
     if (lat < Math.min(latMin, latMax) || lat > Math.max(latMin, latMax)) return null;
     if (lonQ < Math.min(lonMin, lonMax) || lonQ > Math.max(lonMin, lonMax)) return null;
   
-    // Step size (assumes evenly spaced grid, which HRDPS subset will be in your output)
     const dLat = (latMax - latMin) / (nlat - 1);
     const dLon = (lonMax - lonMin) / (nlon - 1);
   
-    // Nearest-neighbor indices
     let i = Math.round((lat - latMin) / dLat);
     let j = Math.round((lonQ - lonMin) / dLon);
   
-    // clamp
     i = Math.max(0, Math.min(nlat - 1, i));
     j = Math.max(0, Math.min(nlon - 1, j));
   
@@ -135,26 +128,7 @@
     }
     return { u, v };
   }
-    // Find nearest longitude index
-    let bestJ = 0;
-    let bestLonDiff = Infinity;
-    for (let j = 0; j < nlon; j++) {
-      const d = Math.abs(lonQ - lons[j]);
 
-      if (d < bestLonDiff) {
-        bestLonDiff = d;
-        bestJ = j;
-      }
-    }
-
-    const u = uArr[bestI]?.[bestJ];
-    const v = vArr[bestI]?.[bestJ];
-
-    if (typeof u !== "number" || typeof v !== "number" || !isFinite(u) || !isFinite(v)) {
-      return null;
-    }
-    return { u, v };
-  }
 
   // ─────────────────────────────────────────
   // 3) Your particle functions (slotted here)
