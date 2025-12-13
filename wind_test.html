@@ -81,7 +81,7 @@
       windField = js;
       console.log("Loaded wind field:", js.meta);
 
-      initParticles(800);   // your function
+      initParticles(150);   // your function
     })
     .catch(err => {
       console.error("Failed to load wind field:", err);
@@ -160,7 +160,7 @@
     }
   }
 
-  function evolveParticles(dtSeconds = 60) {
+  function evolveParticles(dtSeconds = 300) {
     if (!particles.length) return;
 
     const bounds = map.getBounds();
@@ -217,7 +217,7 @@
   function frame() {
     requestAnimationFrame(frame);
     if (!windField || !particles.length) return;
-    evolveParticles(10);  // 60 seconds per frame (visual scale)
+    evolveParticles(300);  // 60 seconds per frame (visual scale)
     drawParticles();
   }
   frame();
@@ -225,7 +225,7 @@
   // Re-seed particles when you drag/zoom a lot
   map.on('moveend zoomend', () => {
     if (windField) {
-      initParticles(800);
+      initParticles(150);
     }
   });
 </script>
