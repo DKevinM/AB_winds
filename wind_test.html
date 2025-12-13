@@ -60,6 +60,11 @@
   });
   resizeCanvas();
 
+    // TEMP: prove the canvas is visible
+  windCtx.fillStyle = "red";
+  windCtx.fillRect(10, 10, 40, 40);
+  console.log("canvas size:", windCanvas.width, windCanvas.height);
+
   map.on('zoomstart movestart', () => {
   windCtx.clearRect(0, 0, windCanvas.width, windCanvas.height);
   });
