@@ -60,6 +60,11 @@
   });
   resizeCanvas();
 
+  map.on('zoomstart movestart', () => {
+  windCtx.clearRect(0, 0, windCanvas.width, windCanvas.height);
+  });
+
+
   // ─────────────────────────────────────────
   // 2) Wind field JSON + simple interpolation
   // ─────────────────────────────────────────
@@ -203,7 +208,7 @@
   function frame() {
     requestAnimationFrame(frame);
     if (!windField || !particles.length) return;
-    evolveParticles(60);  // 60 seconds per frame (visual scale)
+    evolveParticles(10);  // 60 seconds per frame (visual scale)
     drawParticles();
   }
   frame();
