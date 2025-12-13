@@ -24,7 +24,8 @@
       position: absolute;
       top: 0;
       left: 0;
-      pointer-events: none; /* let mouse clicks go through to the map */
+      pointer-events: none;
+      z-index: 9999;
     }
   </style>
 </head>
@@ -35,39 +36,38 @@
 
 <script>
   // ─────────────────────────────────────────
-  // 1) Base map + canvas overlay
+  // Canvas overlay (Leaflet pane version)
   // ─────────────────────────────────────────
-  const map = L.map('map').setView([53.5, -113.5], 6);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 12,
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
-
-  const mapDiv = document.getElementById('map');
-  const windCanvas = document.createElement('canvas');
-  windCanvas.className = 'wind-layer';
-  mapDiv.appendChild(windCanvas);
-  const windCtx = windCanvas.getContext('2d');
-
-  function resizeCanvas() {
-    const rect = mapDiv.getBoundingClientRect();
-    windCanvas.width = rect.width;
-    windCanvas.height = rect.height;
+  const windCanvas = L.DomUtil.create("canvas", "wind-layer");
+  const windCtx = windCanvas.getContext("2d");
+  
+  // Put canvas in a pane that sits above tiles
+  map.getPanes().overlayPane.appendChild(windCanvas);
+  
+  // Make sure it can actually be seen
+  windCanvas.style.position = "absolute";
+  windCanvas.style.top = "0";
+  windCanvas.style.left = "0";
+  windCanvas.style.pointerEvents = "none";
+  windCanvas.style.zIndex = "9999";
+  
+  function resizeAndRepositionCanvas() {
+    const size = map.getSize();
+    windCanvas.width  = size.x;
+    windCanvas.height = size.y;
+  
+    // Position canvas to match map's top-left in layer coords
+    const topLeft = map.containerPointToLayerPoint([0, 0]);
+    L.DomUtil.setPosition(windCanvas, topLeft);
   }
-  window.addEventListener('resize', resizeCanvas);
-  map.on('resize move zoom', () => {
-    resizeCanvas();
-  });
-  resizeCanvas();
-
-    // TEMP: prove the canvas is visible
+  
+  map.on("resize move zoom zoomstart movestart", resizeAndRepositionCanvas);
+  resizeAndRepositionCanvas();
+  
+  // TEMP: prove canvas is visible
   windCtx.fillStyle = "red";
-  windCtx.fillRect(10, 10, 40, 40);
+  windCtx.fillRect(10, 10, 60, 60);
   console.log("canvas size:", windCanvas.width, windCanvas.height);
-
-  map.on('zoomstart movestart', () => {
-  windCtx.clearRect(0, 0, windCanvas.width, windCanvas.height);
-  });
 
 
   // ─────────────────────────────────────────
