@@ -71,6 +71,7 @@
   let windField = null;   // will hold { meta, lats, lons, u, v }
   let particles = [];
 
+  
   // TODO: adjust this path to wherever your JSON lives
   const WIND_JSON_URL = "data/AB_wind_001.json";
 
@@ -90,11 +91,18 @@
   // Fine for testing; we can upgrade to bilinear later.
   function interpolateWind(lat, lon) {
     if (!windField) return null;
-
+  
     const lats = windField.lats;
     const lons = windField.lons;
     const uArr = windField.u; // 2D: [iLat][jLon]
     const vArr = windField.v;
+  
+    // --- NEW: convert Leaflet lon (-180..180) into 0..360 if your grid uses 0..360
+    let lonQ = lon;
+    if (lons.length && lons[0] > 180) {   // crude test: grid is 0..360
+      if (lonQ < 0) lonQ += 360;
+    }
+
 
     const nlat = lats.length;
     const nlon = lons.length;
@@ -115,7 +123,8 @@
     let bestJ = 0;
     let bestLonDiff = Infinity;
     for (let j = 0; j < nlon; j++) {
-      const d = Math.abs(lon - lons[j]);
+      const d = Math.abs(lonQ - lons[j]);
+
       if (d < bestLonDiff) {
         bestLonDiff = d;
         bestJ = j;
