@@ -100,72 +100,69 @@ def open_hrdps_10m_uv(path_u: str, path_v: str):
 
 
 
+import numpy as np  # add at top
+
+import numpy as np  # add at top
+
 def to_earth_like_json(u, v):
     if u.shape != v.shape:
         raise ValueError(f"u and v shapes differ: {u.shape} vs {v.shape}")
 
-    # Dimensions (prefer y/x if present)
-    if "y" in u.dims and "x" in u.dims:
-        ny = int(u.sizes["y"])
-        nx = int(u.sizes["x"])
-        y = u["y"].values.tolist()
-        x = u["x"].values.tolist()
+    coords = list(u.coords)
 
-        lat2d = u.coords.get("latitude")
-        lon2d = u.coords.get("longitude")
-        if lat2d is None or lon2d is None:
-            raise ValueError(f"Expected 2D latitude/longitude coords. Coords: {list(u.coords)}")
+    if "latitude" in coords and "longitude" in coords:
+        lat_name, lon_name = "latitude", "longitude"
+    elif "lat" in coords and "lon" in coords:
+        lat_name, lon_name = "lat", "lon"
+    elif "y" in coords and "x" in coords:
+        lat_name, lon_name = "y", "x"
+    else:
+        raise ValueError(f"Could not find lat/lon coordinates in {coords}")
 
-        lat_vals = lat2d.values.astype("float32")
-        lon_vals = (lon2d.values % 360).astype("float32")
+    lats = u[lat_name].values
+    lons = u[lon_name].values
 
-        meta = {
-            "grid": "yx_with_latlon2d",
-            "ny": ny,
-            "nx": nx,
-            "lat_min": float(lat_vals.min()),
-            "lat_max": float(lat_vals.max()),
-            "lon_min": float(lon_vals.min()),
-            "lon_max": float(lon_vals.max()),
-            "time": str(u.coords.get("time").values) if "time" in u.coords else None,
-            "units": {"u": "m/s", "v": "m/s"},
-        }
+    meta = {
+        "lat_min": float(np.nanmin(lats)),
+        "lat_max": float(np.nanmax(lats)),
+        "lon_min": float(np.nanmin(lons)),
+        "lon_max": float(np.nanmax(lons)),
+        "nlat": int(len(lats)),
+        "nlon": int(len(lons)),
+        "time": str(u.coords.get("time").values) if "time" in u.coords else None,
+        "units": {"u": "m/s", "v": "m/s"},
+    }
 
-        return {
-            "meta": meta,
-            "y": y,
-            "x": x,
-            "lat2d": lat_vals.tolist(),
-            "lon2d": lon_vals.tolist(),
-            "u": u.values.astype("float32").tolist(),  # shape [ny][nx]
-            "v": v.values.astype("float32").tolist(),
-        }
+    u_np = u.values.astype("float32")
+    v_np = v.values.astype("float32")
 
-    # Rectilinear case: 1-D latitude/longitude dims
-    if ("latitude" in u.dims) and ("longitude" in u.dims):
-        lats = u["latitude"].values
-        lons = (u["longitude"].values % 360)
+    # Replace NaN/Inf with None so JSON is valid
+    u_bad = ~np.isfinite(u_np)
+    v_bad = ~np.isfinite(v_np)
 
-        meta = {
-            "grid": "latlon1d",
-            "lat_min": float(lats.min()),
-            "lat_max": float(lats.max()),
-            "lon_min": float(lons.min()),
-            "lon_max": float(lons.max()),
-            "nlat": int(len(lats)),
-            "nlon": int(len(lons)),
-            "time": str(u.coords.get("time").values) if "time" in u.coords else None,
-            "units": {"u": "m/s", "v": "m/s"},
-        }
+    if u_bad.any():
+        u_obj = u_np.astype(object)
+        u_obj[u_bad] = None
+    else:
+        u_obj = u_np
 
-        return {
-            "meta": meta,
-            "lats": lats.tolist(),
-            "lons": lons.tolist(),
-            "u": u.values.astype("float32").tolist(),  # [nlat][nlon]
-            "v": v.values.astype("float32").tolist(),
-        }
+    if v_bad.any():
+        v_obj = v_np.astype(object)
+        v_obj[v_bad] = None
+    else:
+        v_obj = v_np
 
+    return {
+        "meta": meta,
+        "lats": lats.tolist(),
+        "lons": lons.tolist(),
+        "u": u_obj.tolist(),
+        "v": v_obj.tolist(),
+    }
+
+
+    json.dump(js, f, allow_nan=False)
+    
     raise ValueError(f"Unsupported grid/dims. dims={u.dims}, coords={list(u.coords)}")
 
 
