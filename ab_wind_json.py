@@ -37,10 +37,6 @@ def download_to_temp(url: str) -> str:
 def open_hrdps_10m_uv(path_u: str, path_v: str):
     """
     Open HRDPS 10 m U/V GRIB2 files and return (u10, v10) as xarray DataArrays.
-
-    Assumes:
-    - typeOfLevel = heightAboveGround
-    - level = 10 m
     """
     filter_kwargs = {
         "filter_by_keys": {
@@ -52,32 +48,50 @@ def open_hrdps_10m_uv(path_u: str, path_v: str):
     ds_u = xr.open_dataset(path_u, engine="cfgrib", backend_kwargs=filter_kwargs)
     ds_v = xr.open_dataset(path_v, engine="cfgrib", backend_kwargs=filter_kwargs)
 
-    # Be robust to variable names
     def pick_var(ds, candidates):
         for name in candidates:
             if name in ds:
                 return ds[name]
-        raise ValueError(
-            f"None of {candidates} found in dataset variables: {list(ds.data_vars)}"
-        )
+        raise ValueError(f"None of {candidates} found in dataset variables: {list(ds.data_vars)}")
 
     u = pick_var(ds_u, ["u10", "10u", "UGRD"])
     v = pick_var(ds_v, ["v10", "10v", "VGRD"])
 
-    # Subset to Alberta bounding box
+    # ---- NEW: detect coord names ----
+    coords = list(u.coords)
+
+    if "latitude" in coords and "longitude" in coords:
+        lat_name = "latitude"
+        lon_name = "longitude"
+    elif "lat" in coords and "lon" in coords:
+        lat_name = "lat"
+        lon_name = "lon"
+    elif "y" in coords and "x" in coords:
+        # occasionally HRDPS / rotated grids use y/x
+        lat_name = "y"
+        lon_name = "x"
+    else:
+        raise ValueError(f"Could not find lat/lon coordinates in {coords}")
+
+    # HRDPS longitudes usually 0–360
     lon_min = AB_LON_MIN % 360
     lon_max = AB_LON_MAX % 360
 
+    # ---- Subset using the detected names ----
     sub_u = u.sel(
-        latitude=slice(AB_LAT_MAX, AB_LAT_MIN),  # lat typically descending
-        longitude=slice(lon_min, lon_max)
+        **{
+            lat_name: slice(AB_LAT_MAX, AB_LAT_MIN),
+            lon_name: slice(lon_min, lon_max),
+        }
     )
     sub_v = v.sel(
-        latitude=slice(AB_LAT_MAX, AB_LAT_MIN),
-        longitude=slice(lon_min, lon_max)
+        **{
+            lat_name: slice(AB_LAT_MAX, AB_LAT_MIN),
+            lon_name: slice(lon_min, lon_max),
+        }
     )
 
-    # Use the first time slice
+    # Use first time slice if present
     if "time" in sub_u.dims:
         sub_u = sub_u.isel(time=0)
     if "time" in sub_v.dims:
@@ -87,14 +101,25 @@ def open_hrdps_10m_uv(path_u: str, path_v: str):
 
 
 def to_earth_like_json(u, v):
-    """
-    Convert u/v DataArrays into a compact JSON structure the JS side can read.
-    """
     if u.shape != v.shape:
         raise ValueError(f"u and v shapes differ: {u.shape} vs {v.shape}")
 
-    lats = u["latitude"].values
-    lons = u["longitude"].values
+    coords = list(u.coords)
+
+    if "latitude" in coords and "longitude" in coords:
+        lat_name = "latitude"
+        lon_name = "longitude"
+    elif "lat" in coords and "lon" in coords:
+        lat_name = "lat"
+        lon_name = "lon"
+    elif "y" in coords and "x" in coords:
+        lat_name = "y"
+        lon_name = "x"
+    else:
+        raise ValueError(f"Could not find lat/lon coordinates in {coords}")
+
+    lats = u[lat_name].values
+    lons = u[lon_name].values
 
     meta = {
         "lat_min": float(lats.min()),
@@ -104,10 +129,7 @@ def to_earth_like_json(u, v):
         "nlat": int(len(lats)),
         "nlon": int(len(lons)),
         "time": str(u.coords.get("time").values) if "time" in u.coords else None,
-        "units": {
-            "u": "m/s",
-            "v": "m/s"
-        }
+        "units": {"u": "m/s", "v": "m/s"},
     }
 
     u_vals = u.values.astype("float32").tolist()
@@ -118,9 +140,8 @@ def to_earth_like_json(u, v):
         "lats": lats.tolist(),
         "lons": lons.tolist(),
         "u": u_vals,
-        "v": v_vals
+        "v": v_vals,
     }
-
 
 def pick_run_cycle(now: dt.datetime | None = None) -> dt.datetime:
     """
