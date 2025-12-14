@@ -71,10 +71,6 @@
   leafletMap.on("resize move zoom zoomstart movestart", resizeAndRepositionCanvas);
   resizeAndRepositionCanvas();
   
-  // TEMP: prove canvas is visible
-  windCtx.fillStyle = "red";
-  windCtx.fillRect(10, 10, 60, 60);
-  console.log("canvas size:", windCanvas.width, windCanvas.height);
 
 
   // ─────────────────────────────────────────
@@ -199,16 +195,19 @@
   }
 
   function drawParticles() {
+    // Clear ONCE at the start of the frame
     windCtx.clearRect(0, 0, windCanvas.width, windCanvas.height);
+  
+    // DEBUG: persistent red square
     windCtx.globalAlpha = 1;
     windCtx.fillStyle = "red";
     windCtx.fillRect(10, 10, 40, 40);
-
-    windCtx.clearRect(0, 0, windCanvas.width, windCanvas.height);
+  
+    // Draw particles
     windCtx.globalAlpha = 0.6;
     windCtx.strokeStyle = "#00ffff";
     windCtx.lineWidth = 1;
-
+      
     for (const p of particles) {
       const latlng = L.latLng(p.lat, p.lon);
       const pt = leafletMap.latLngToContainerPoint(latlng);
