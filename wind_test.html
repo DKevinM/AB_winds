@@ -225,7 +225,7 @@
   frame();
 
   // Re-seed particles when you drag/zoom a lot
-  map.on('moveend zoomend', () => {
+  leafletMap.on('moveend zoomend', () => {
     if (windField) {
       initParticles(150);
     }
