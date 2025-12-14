@@ -121,12 +121,16 @@ def to_earth_like_json(u, v):
 
     lats = u[lat_name].values
     lons = u[lon_name].values
+    lons_converted = np.where(lons > 180, lons - 360, lons)
 
     meta = {
         "lat_min": float(np.nanmin(lats)),
         "lat_max": float(np.nanmax(lats)),
-        "lon_min": float(np.nanmin(lons)),
-        "lon_max": float(np.nanmax(lons)),
+        "lon_min": float(np.nanmin(lons_converted)),  # Use converted
+        "lon_max": float(np.nanmax(lons_converted)),  # Use converted
+        "lon_original_min": float(np.nanmin(lons)),  # Keep original for reference
+        "lon_original_max": float(np.nanmax(lons)),
+        "lon_converted": True,  # Flag that conversion happened
         "nlat": int(len(lats)),
         "nlon": int(len(lons)),
         "time": str(u.coords.get("time").values) if "time" in u.coords else None,
@@ -152,10 +156,11 @@ def to_earth_like_json(u, v):
     else:
         v_obj = v_np
 
+    # Use converted longitudes in JSON
     return {
         "meta": meta,
         "lats": lats.tolist(),
-        "lons": lons.tolist(),
+        "lons": lons_converted.tolist(),  # Use converted!
         "u": u_obj.tolist(),
         "v": v_obj.tolist(),
     }
