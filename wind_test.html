@@ -42,7 +42,7 @@
   const windCtx = windCanvas.getContext("2d");
   
   // Put canvas in a pane that sits above tiles
-  map.getPanes().overlayPane.appendChild(windCanvas);
+  leafletMap.getPanes().overlayPane.appendChild(windCanvas);
   
   // Make sure it can actually be seen
   windCanvas.style.position = "absolute";
