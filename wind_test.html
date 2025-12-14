@@ -15,7 +15,7 @@
       height: 100%;
       margin: 0;
     }
-    map {
+    #map {
       width: 100%;
       height: 100%;
       position: relative;
@@ -36,6 +36,12 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
+  const leafletMap = L.map('map').setView([53.5, -113.5], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 12,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(leafletMap);
+
   // ─────────────────────────────────────────
   // Canvas overlay (Leaflet pane version)
   // ─────────────────────────────────────────
@@ -53,16 +59,16 @@
   windCanvas.style.zIndex = "9999";
   
   function resizeAndRepositionCanvas() {
-    const size = map.getSize();
+    const size = leafletMap.getSize();
     windCanvas.width  = size.x;
     windCanvas.height = size.y;
   
     // Position canvas to match map's top-left in layer coords
-    const topLeft = map.containerPointToLayerPoint([0, 0]);
+    const topLeft = leafletMap.containerPointToLayerPoint([0, 0]);
     L.DomUtil.setPosition(windCanvas, topLeft);
   }
   
-  map.on("resize move zoom zoomstart movestart", resizeAndRepositionCanvas);
+  leafletMap.on("resize move zoom zoomstart movestart", resizeAndRepositionCanvas);
   resizeAndRepositionCanvas();
   
   // TEMP: prove canvas is visible
@@ -142,7 +148,7 @@
 
   function initParticles(n = 500) {
     particles = [];
-    const bounds = map.getBounds();
+    const bounds = leafletMap.getBounds();
 
     for (let i = 0; i < n; i++) {
       const lat = bounds.getSouth() + Math.random() * (bounds.getNorth() - bounds.getSouth());
@@ -159,7 +165,7 @@
   function evolveParticles(dtSeconds = 300) {
     if (!particles.length) return;
 
-    const bounds = map.getBounds();
+    const bounds = leafletMap.getBounds();
 
     for (const p of particles) {
       p.age += 1;
@@ -200,7 +206,7 @@
 
     for (const p of particles) {
       const latlng = L.latLng(p.lat, p.lon);
-      const pt = map.latLngToContainerPoint(latlng);
+      const pt = leafletMap.latLngToContainerPoint(latlng);
 
       windCtx.beginPath();
       // short streak – you can lengthen this later
