@@ -200,6 +200,11 @@
 
   function drawParticles() {
     windCtx.clearRect(0, 0, windCanvas.width, windCanvas.height);
+    windCtx.globalAlpha = 1;
+    windCtx.fillStyle = "red";
+    windCtx.fillRect(10, 10, 40, 40);
+
+    windCtx.clearRect(0, 0, windCanvas.width, windCanvas.height);
     windCtx.globalAlpha = 0.6;
     windCtx.strokeStyle = "#00ffff";
     windCtx.lineWidth = 1;
