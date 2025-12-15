@@ -183,6 +183,11 @@
   
       p.lat += dlat;
       p.lon += dlon;
+
+      if (Math.random() < 0.002) {
+        console.log("Δlat, Δlon", dlat, dlon);
+      }
+
     }
   }
 
@@ -223,18 +228,33 @@
 
 
   
-  function frame() {
+  let lastTime = performance.now();
+  
+  function frame(now) {
     requestAnimationFrame(frame);
+  
+    if (!windField || !particles.length) return;
+  
+    const dt = (now - lastTime) / 1000; // seconds since last frame
+    lastTime = now;
+  
+    // Cap dt to avoid jumps
+    const dtClamped = Math.min(dt, 0.05);
+  
+    evolveParticles(dtClamped * 200); // visual speed factor
     drawParticles();
   }
-  frame();
+  
+  requestAnimationFrame(frame);
 
 
   // Re-seed particles when you drag/zoom a lot
-  leafletMap.on('moveend zoomend', () => {
-    if (windField) {
-      initParticles(150);
-    }
+  // leafletMap.on('moveend zoomend', () => {
+  //  if (windField) {
+  //    initParticles(150);
+  //  }
+
+    
   });
 </script>
 </body>
