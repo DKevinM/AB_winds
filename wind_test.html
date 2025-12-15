@@ -194,20 +194,17 @@
   
   
   function drawParticles() {
-    windCtx.clearRect(0, 0, windCanvas.width, windCanvas.height);
+    // Fade previous frame (DO NOT clear)
+    windCtx.globalCompositeOperation = "source-over";
+    windCtx.fillStyle = "rgba(0, 0, 0, 0.05)";
+    windCtx.fillRect(0, 0, windCanvas.width, windCanvas.height);
   
-    // Debug anchor
-    windCtx.fillStyle = "red";
-    windCtx.fillRect(10, 10, 40, 40);
-  
-    windCtx.globalAlpha = 1;
     windCtx.strokeStyle = "lime";
-    windCtx.lineWidth = 2;
+    windCtx.lineWidth = 1;
   
     for (const p of particles) {
       const pt = leafletMap.latLngToContainerPoint([p.lat, p.lon]);
   
-      // Skip if off screen
       if (
         pt.x < 0 || pt.y < 0 ||
         pt.x > windCanvas.width ||
@@ -216,16 +213,10 @@
   
       windCtx.beginPath();
       windCtx.moveTo(pt.x, pt.y);
-      windCtx.lineTo(pt.x - 6, pt.y - 6);
+      windCtx.lineTo(pt.x - 4, pt.y - 4);
       windCtx.stroke();
-
-      if (Math.random() < 0.01) {
-        console.log("Particle draw sample:", particles[0]);
-      }
-
     }
   }
-
 
   
   let lastTime = performance.now();
