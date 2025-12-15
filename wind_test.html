@@ -179,11 +179,6 @@
 
       
       const w = interpolateWind(p.lat, p.lon);
-      if (Math.random() < 0.005) {
-        console.log("Sample index:", i, j, 
-                    "u:", windField.u[i]?.[j],
-                    "v:", windField.v[i]?.[j]);
-      }
 
       
       if (!w) {
