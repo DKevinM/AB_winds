@@ -83,6 +83,7 @@
   // TODO: adjust this path to wherever your JSON lives
   const WIND_JSON_URL = "data/AB_wind_001.json";
 
+  
   fetch(WIND_JSON_URL)
     .then(r => r.json())
     .then(js => {
@@ -141,47 +142,46 @@
   // ─────────────────────────────────────────
   // 3) Your particle functions (slotted here)
   // ─────────────────────────────────────────
-
-  function initParticles(n = 500) {
+  
+  function initParticles(n = 200) {
     particles = [];
-    const bounds = leafletMap.getBounds();
-
-    for (let i = 0; i < n; i++) {
-      const lat = bounds.getSouth() + Math.random() * (bounds.getNorth() - bounds.getSouth());
-      const lon = bounds.getWest()  + Math.random() * (bounds.getEast()  - bounds.getWest());
-
+  
+    const m = windField.meta;
+  
+    for (let k = 0; k < n; k++) {
       particles.push({
-        lat,
-        lon,
+        lat: m.lat_min + Math.random() * (m.lat_max - m.lat_min),
+        lon: m.lon_min + Math.random() * (m.lon_max - m.lon_min),
         age: Math.random() * 100
       });
     }
+  
+    console.log("Particles seeded:", particles.length);
   }
+
   
   function evolveParticles() {
     // do nothing for now
   }
 
   
+  
   function drawParticles() {
+    console.log("Drawing particles:", particles.length);
+
     windCtx.clearRect(0, 0, windCanvas.width, windCanvas.height);
-  
-    windCtx.fillStyle = "cyan";
-  
-    for (const p of particles) {
-      const pt = leafletMap.latLngToContainerPoint([p.lat, p.lon]);
-      windCtx.fillRect(pt.x, pt.y, 2, 2);
-    }
+    windCtx.fillStyle = "red";
+    windCtx.fillRect(20, 20, 50, 50);
   }
 
 
+  
   function frame() {
     requestAnimationFrame(frame);
-    if (!windField || !particles.length) return;
-    evolveParticles(300);  // 60 seconds per frame (visual scale)
     drawParticles();
   }
   frame();
+
 
   // Re-seed particles when you drag/zoom a lot
   leafletMap.on('moveend zoomend', () => {
