@@ -157,76 +157,23 @@
       });
     }
   }
-
-  function evolveParticles(dtSeconds = 300) {
-    if (!particles.length) return;
-
-    const bounds = leafletMap.getBounds();
-
-    for (const p of particles) {
-      p.age += 1;
-      if (p.age > 200) {
-        // respawn
-        p.age = 0;
-        p.lat = bounds.getSouth() + Math.random() * (bounds.getNorth() - bounds.getSouth());
-        p.lon = bounds.getWest()  + Math.random() * (bounds.getEast()  - bounds.getWest());
-        continue;
-      }
-
-      if (Math.random() < 0.005) {
-        console.log("Particle at", p.lat.toFixed(3), p.lon.toFixed(3));
-      }
-
-      
-      const w = interpolateWind(p.lat, p.lon);
-
-      
-      if (!w) {
-        p.age = 999; // kill / respawn soon
-        continue;
-      }
-
-
-      // Crude: speed [m/s] * dt [s] -> displacement [m], then to degrees
-      const EARTH_R = 6371000;
-      const dlat = (w.v * dtSeconds) / EARTH_R * (180 / Math.PI);
-      const dlon = (w.u * dtSeconds) / (EARTH_R * Math.cos(p.lat * Math.PI / 180)) * (180 / Math.PI);
-
-      // Move FORWARD in time (trajectories show where air is going)
-      p.lat += dlat;
-      p.lon += dlon;
-
-      if (!bounds.contains([p.lat, p.lon])) {
-        p.age = 999;
-      }
-    }
+  
+  function evolveParticles() {
+    // do nothing for now
   }
 
+  
   function drawParticles() {
-    // Clear ONCE at the start of the frame
     windCtx.clearRect(0, 0, windCanvas.width, windCanvas.height);
   
-    // DEBUG: persistent red square
-    windCtx.globalAlpha = 1;
-    windCtx.fillStyle = "red";
-    windCtx.fillRect(10, 10, 40, 40);
+    windCtx.fillStyle = "cyan";
   
-    // Draw particles
-    windCtx.globalAlpha = 0.6;
-    windCtx.strokeStyle = "#00ffff";
-    windCtx.lineWidth = 1;
-      
     for (const p of particles) {
-      const latlng = L.latLng(p.lat, p.lon);
-      const pt = leafletMap.latLngToContainerPoint(latlng);
-
-      windCtx.beginPath();
-      // short streak – you can lengthen this later
-      windCtx.moveTo(pt.x, pt.y);
-      windCtx.lineTo(pt.x - 2, pt.y - 2);
-      windCtx.stroke();
+      const pt = leafletMap.latLngToContainerPoint([p.lat, p.lon]);
+      windCtx.fillRect(pt.x, pt.y, 2, 2);
     }
   }
+
 
   function frame() {
     requestAnimationFrame(frame);
