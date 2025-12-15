@@ -148,30 +148,77 @@
   
     const m = windField.meta;
   
-    for (let k = 0; k < n; k++) {
+    for (let i = 0; i < n; i++) {
+      const lat = m.lat_min + Math.random() * (m.lat_max - m.lat_min);
+      const lon = m.lon_min + Math.random() * (m.lon_max - m.lon_min);
+  
       particles.push({
-        lat: m.lat_min + Math.random() * (m.lat_max - m.lat_min),
-        lon: m.lon_min + Math.random() * (m.lon_max - m.lon_min),
+        lat,
+        lon,
         age: Math.random() * 100
       });
     }
   
     console.log("Particles seeded:", particles.length);
   }
-
   
-  function evolveParticles() {
-    // do nothing for now
+
+
+  function evolveParticles(dtSeconds = 300) {
+    if (!particles.length || !windField) return;
+  
+    for (const p of particles) {
+  
+      const w = interpolateWind(p.lat, p.lon);
+  
+      // If no wind here, just skip movement this frame
+      if (!w) continue;
+  
+      const EARTH_R = 6371000;
+  
+      const dlat = (w.v * dtSeconds) / EARTH_R * (180 / Math.PI);
+      const dlon = (w.u * dtSeconds) /
+                   (EARTH_R * Math.cos(p.lat * Math.PI / 180)) *
+                   (180 / Math.PI);
+  
+      p.lat += dlat;
+      p.lon += dlon;
+    }
   }
 
   
   
   function drawParticles() {
-    console.log("Drawing particles:", particles.length);
-
     windCtx.clearRect(0, 0, windCanvas.width, windCanvas.height);
+  
+    // Debug anchor
     windCtx.fillStyle = "red";
-    windCtx.fillRect(20, 20, 50, 50);
+    windCtx.fillRect(10, 10, 40, 40);
+  
+    windCtx.globalAlpha = 1;
+    windCtx.strokeStyle = "lime";
+    windCtx.lineWidth = 2;
+  
+    for (const p of particles) {
+      const pt = leafletMap.latLngToContainerPoint([p.lat, p.lon]);
+  
+      // Skip if off screen
+      if (
+        pt.x < 0 || pt.y < 0 ||
+        pt.x > windCanvas.width ||
+        pt.y > windCanvas.height
+      ) continue;
+  
+      windCtx.beginPath();
+      windCtx.moveTo(pt.x, pt.y);
+      windCtx.lineTo(pt.x - 6, pt.y - 6);
+      windCtx.stroke();
+
+      if (Math.random() < 0.01) {
+        console.log("Particle draw sample:", particles[0]);
+      }
+
+    }
   }
 
 
