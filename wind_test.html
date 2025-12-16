@@ -84,12 +84,7 @@
 
   // ─────────────────────────────────────────
   // 2) Wind field JSON + simple interpolation
-  // ─────────────────────────────────────────
-  let windFields = [];
-  let particles = [];
-  let blendTime = 0;
-
-  
+  // ───────────────────────────────────────── 
   // TODO: adjust this path to wherever your JSON lives
   const WIND_FILES = [
     "data/AB_wind_000.json",
@@ -97,17 +92,10 @@
     "data/AB_wind_002.json",
     "data/AB_wind_003.json"
   ];
-  
 
-
-
-
-  const WIND_FILES = [
-    "data/AB_wind_000.json",
-    "data/AB_wind_001.json",
-    "data/AB_wind_002.json",
-    "data/AB_wind_003.json"
-  ];
+  let windFields = [];
+  let particles = [];
+  let blendTime = 0;
   
   
   Promise.all(
