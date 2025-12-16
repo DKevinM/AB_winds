@@ -43,6 +43,11 @@
   }).addTo(leafletMap);
 
 
+  function currentWindField() {
+    return windFields.length ? windFields[0] : null;
+  }
+
+  
   function respawnParticle(p) {
     const b = leafletMap.getBounds();
     p.lat = b.getSouth() + Math.random() * (b.getNorth() - b.getSouth());
@@ -206,28 +211,24 @@
   // ─────────────────────────────────────────
   // 3) Your particle functions (slotted here)
   // ─────────────────────────────────────────
-  
   function initParticles(n = 400) {
     particles = [];
-  
-    const m = windField.meta;
+    const b = leafletMap.getBounds();
   
     for (let i = 0; i < n; i++) {
-      const lat = m.lat_min + Math.random() * (m.lat_max - m.lat_min);
-      const lon = m.lon_min + Math.random() * (m.lon_max - m.lon_min);
-  
       particles.push({
-        lat,
-        lon,
+        lat: b.getSouth() + Math.random() * (b.getNorth() - b.getSouth()),
+        lon: b.getWest()  + Math.random() * (b.getEast()  - b.getWest()),
         age: Math.random() * 100
       });
     }
   }
+
   
 
 
   function evolveParticles(dtSeconds) {
-    if (!particles.length || !windField) return;
+    if (!particles.length || !windFields.length) return;
   
     const bounds = leafletMap.getBounds();
   
@@ -261,9 +262,10 @@
     
   function drawParticles() {
     // Fade previous frame
-    windCtx.globalCompositeOperation = "source-over";
-    windCtx.fillStyle = "rgba(0, 0, 0, 0.05)";
+    windCtx.globalCompositeOperation = "destination-in";
+    windCtx.fillStyle = "rgba(0, 0, 0, 0.92)";
     windCtx.fillRect(0, 0, windCanvas.width, windCanvas.height);
+    windCtx.globalCompositeOperation = "source-over";
   
     for (const p of particles) {
       const pt = leafletMap.latLngToContainerPoint([p.lat, p.lon]);
@@ -275,7 +277,7 @@
       ) continue;
   
       // Colour by speed
-      const w = interpolateWind(p.lat, p.lon);
+      const w = interpolateWindBlended(p.lat, p.lon, blendTime);
       if (!w) continue;
   
       const speed = Math.hypot(w.u, w.v);
@@ -301,16 +303,16 @@
   function frame(now) {
     requestAnimationFrame(frame);
   
-    if (!windField || !particles.length) return;
+    if (!windFields.length || !particles.length) return;
   
     const dt = (now - lastTime) / 1000;
     lastTime = now;
   
     const dtClamped = Math.min(dt, 0.05);
 
-    blendTime += dtClamped * 0.2;   // controls curvature & evolution
-    
-    evolveParticles(dtClamped * 40);
+    blendTime += dtClamped * 0.05;
+    evolveParticles(dtClamped * 15);
+
     drawParticles();
   }
   
