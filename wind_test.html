@@ -202,11 +202,11 @@
     }
   }
   
-  
+    
   function drawParticles() {
-    // Fade previous frame (DO NOT clear)
+    // Fade previous frame
     windCtx.globalCompositeOperation = "source-over";
-    windCtx.fillStyle = "rgba(0, 0, 0, 0.05)";
+    windCtx.fillStyle = "rgba(0, 0, 0, 0.08)";
     windCtx.fillRect(0, 0, windCanvas.width, windCanvas.height);
   
     windCtx.strokeStyle = "lime";
@@ -227,7 +227,6 @@
       windCtx.stroke();
     }
   }
-
   
   let lastTime = performance.now();
   
