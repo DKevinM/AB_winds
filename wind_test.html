@@ -213,16 +213,25 @@
   // ─────────────────────────────────────────
   function initParticles(n = 400) {
     particles = [];
-    const b = leafletMap.getBounds();
+  
+    const m = windFields[0].meta;
   
     for (let i = 0; i < n; i++) {
+      const lat = m.lat_min + Math.random() * (m.lat_max - m.lat_min);
+      const lon = m.lon_min + Math.random() * (m.lon_max - m.lon_min);
+  
       particles.push({
-        lat: b.getSouth() + Math.random() * (b.getNorth() - b.getSouth()),
-        lon: b.getWest()  + Math.random() * (b.getEast()  - b.getWest()),
+        lat,
+        lon,
+        prevLat: lat,   // 🔥 history
+        prevLon: lon,
         age: Math.random() * 100
       });
     }
+  
+    console.log("Particles seeded:", particles.length);
   }
+
 
   
 
@@ -233,12 +242,15 @@
     const bounds = leafletMap.getBounds();
   
     for (const p of particles) {
-      const w = interpolateWindBlended(p.lat, p.lon, blendTime);
-
+      // store previous position
+      p.prevLat = p.lat;
+      p.prevLon = p.lon;
   
-      // If wind missing → respawn
+      const w = interpolateWindBlended(p.lat, p.lon, blendTime);
       if (!w) {
         respawnParticle(p);
+        p.prevLat = p.lat;
+        p.prevLon = p.lon;
         continue;
       }
   
@@ -252,31 +264,36 @@
       p.lat += dlat;
       p.lon += dlon;
   
-      // If particle leaves map → respawn
       if (!bounds.contains([p.lat, p.lon])) {
         respawnParticle(p);
+        p.prevLat = p.lat;
+        p.prevLon = p.lon;
       }
     }
   }
+
   
     
   function drawParticles() {
-    // Fade previous frame
-    windCtx.globalCompositeOperation = "destination-in";
-    windCtx.fillStyle = "rgba(0, 0, 0, 0.92)";
-    windCtx.fillRect(0, 0, windCanvas.width, windCanvas.height);
+    // Fade instead of clear
     windCtx.globalCompositeOperation = "source-over";
+    windCtx.fillStyle = "rgba(0, 0, 0, 0.08)";
+    windCtx.fillRect(0, 0, windCanvas.width, windCanvas.height);
+  
+    windCtx.lineWidth = 1;
   
     for (const p of particles) {
-      const pt = leafletMap.latLngToContainerPoint([p.lat, p.lon]);
+      const a = leafletMap.latLngToContainerPoint([p.prevLat, p.prevLon]);
+      const b = leafletMap.latLngToContainerPoint([p.lat, p.lon]);
   
       if (
-        pt.x < 0 || pt.y < 0 ||
-        pt.x > windCanvas.width ||
-        pt.y > windCanvas.height
+        a.x < 0 || a.y < 0 ||
+        b.x < 0 || b.y < 0 ||
+        a.x > windCanvas.width || a.y > windCanvas.height ||
+        b.x > windCanvas.width || b.y > windCanvas.height
       ) continue;
   
-      // Colour by speed
+      // speed-based colour
       const w = interpolateWindBlended(p.lat, p.lon, blendTime);
       if (!w) continue;
   
@@ -288,14 +305,13 @@
       else if (speed <12)  windCtx.strokeStyle = "#fdae61";
       else                 windCtx.strokeStyle = "#d7191c";
   
-      windCtx.lineWidth = 1;
-  
       windCtx.beginPath();
-      windCtx.moveTo(pt.x, pt.y);
-      windCtx.lineTo(pt.x - 18, pt.y - 18);
+      windCtx.moveTo(a.x, a.y);
+      windCtx.lineTo(b.x, b.y);
       windCtx.stroke();
     }
   }
+
 
   
   let lastTime = performance.now();
@@ -309,14 +325,15 @@
     lastTime = now;
   
     const dtClamped = Math.min(dt, 0.05);
-
-    blendTime += dtClamped * 0.05;
-    evolveParticles(dtClamped * 15);
-
+  
+    blendTime += dtClamped * 0.25;   // 🔥 controls curvature evolution
+  
+    evolveParticles(dtClamped * 60); // 🔥 motion scale
     drawParticles();
   }
   
   requestAnimationFrame(frame);
+
 
 
 </script>
