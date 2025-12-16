@@ -111,42 +111,67 @@
   function interpolateWind(lat, lon) {
     if (!windField || !windField.meta) return null;
   
-    const meta = windField.meta;
-    const nlat = meta.nlat;
-    const nlon = meta.nlon;
-    if (!nlat || !nlon) return null;
+    const { lat_min, lat_max, lon_min, lon_max, nlat, nlon } = windField.meta;
   
-    // Convert lon to 0..360 if the grid is 0..360
+    // Handle 0..360 grids
     let lonQ = lon;
-    if (meta.lon_min > 180 && lonQ < 0) lonQ += 360;
+    if (lon_min > 180 && lonQ < 0) lonQ += 360;
   
-    const latMin = meta.lat_min;
-    const latMax = meta.lat_max;
-    const lonMin = meta.lon_min;
-    const lonMax = meta.lon_max;
+    if (
+      lat < Math.min(lat_min, lat_max) || lat > Math.max(lat_min, lat_max) ||
+      lonQ < Math.min(lon_min, lon_max) || lonQ > Math.max(lon_min, lon_max)
+    ) return null;
   
-    // bounds guard
-    if (lat < Math.min(latMin, latMax) || lat > Math.max(latMin, latMax)) return null;
-    if (lonQ < Math.min(lonMin, lonMax) || lonQ > Math.max(lonMin, lonMax)) return null;
+    const dLat = (lat_max - lat_min) / (nlat - 1);
+    const dLon = (lon_max - lon_min) / (nlon - 1);
   
-    const dLat = (latMax - latMin) / (nlat - 1);
-    const dLon = (lonMax - lonMin) / (nlon - 1);
+    const fi = (lat - lat_min) / dLat;
+    const fj = (lonQ - lon_min) / dLon;
   
-    let i = Math.round((lat - latMin) / dLat);
-    let j = Math.round((lonQ - lonMin) / dLon);
+    const i0 = Math.floor(fi);
+    const j0 = Math.floor(fj);
+    const i1 = i0 + 1;
+    const j1 = j0 + 1;
   
-    i = Math.max(0, Math.min(nlat - 1, i));
-    j = Math.max(0, Math.min(nlon - 1, j));
+    if (
+      i0 < 0 || j0 < 0 ||
+      i1 >= nlat || j1 >= nlon
+    ) return null;
   
-    const u = windField.u[i]?.[j];
-    const v = windField.v[i]?.[j];
+    const ti = fi - i0;
+    const tj = fj - j0;
   
-    if (typeof u !== "number" || typeof v !== "number" || !isFinite(u) || !isFinite(v)) {
-      return null;
-    }
+    const u00 = windField.u[i0][j0];
+    const u10 = windField.u[i1][j0];
+    const u01 = windField.u[i0][j1];
+    const u11 = windField.u[i1][j1];
+  
+    const v00 = windField.v[i0][j0];
+    const v10 = windField.v[i1][j0];
+    const v01 = windField.v[i0][j1];
+    const v11 = windField.v[i1][j1];
+  
+    if (
+      !isFinite(u00) || !isFinite(u10) ||
+      !isFinite(u01) || !isFinite(u11) ||
+      !isFinite(v00) || !isFinite(v10) ||
+      !isFinite(v01) || !isFinite(v11)
+    ) return null;
+  
+    const u =
+      u00 * (1 - ti) * (1 - tj) +
+      u10 * ti * (1 - tj) +
+      u01 * (1 - ti) * tj +
+      u11 * ti * tj;
+  
+    const v =
+      v00 * (1 - ti) * (1 - tj) +
+      v10 * ti * (1 - tj) +
+      v01 * (1 - ti) * tj +
+      v11 * ti * tj;
+  
     return { u, v };
   }
-
 
   // ─────────────────────────────────────────
   // 3) Your particle functions (slotted here)
