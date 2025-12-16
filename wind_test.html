@@ -85,50 +85,85 @@
   // ─────────────────────────────────────────
   // 2) Wind field JSON + simple interpolation
   // ─────────────────────────────────────────
-  let windField = null;   // will hold { meta, lats, lons, u, v }
+  let windFields = null;   // will hold { meta, lats, lons, u, v }
   let particles = [];
 
   
   // TODO: adjust this path to wherever your JSON lives
-  const WIND_JSON_URL = "data/AB_wind_001.json";
-
+  const WIND_FILES = [
+    "data/AB_wind_000.json",
+    "data/AB_wind_001.json",
+    "data/AB_wind_002.json",
+    "data/AB_wind_003.json"
+  ];
   
-  fetch(WIND_JSON_URL)
-    .then(r => r.json())
-    .then(js => {
-      windField = js;
-      console.log("Loaded wind field:", js.meta);
+  let windFields = [];   // array of { meta, u, v }
+  let currentBlend = 0; // animation time
 
-      initParticles(400);   // your function
-    })
-    .catch(err => {
-      console.error("Failed to load wind field:", err);
-    });
 
-  // Nearest-neighbour interpolation of u/v at a given lat/lon.
-  // Fine for testing; we can upgrade to bilinear later.
-  function interpolateWind(lat, lon) {
-    if (!windField || !windField.meta) return null;
+  const WIND_FILES = [
+    "data/AB_wind_000.json",
+    "data/AB_wind_001.json",
+    "data/AB_wind_002.json",
+    "data/AB_wind_003.json"
+  ];
   
-    const { lat_min, lat_max, lon_min, lon_max, nlat, nlon } = windField.meta;
+  let windFields = [];   // array of wind snapshots
+  let blendTime = 0;     // animation time
   
+  Promise.all(
+    WIND_FILES.map(f =>
+      fetch(f)
+        .then(r => {
+          if (!r.ok) throw new Error(`Failed to load ${f}`);
+          return r.json();
+        })
+    )
+  )
+  .then(jsons => {
+    windFields = jsons;
+    console.log("Loaded wind fields:", windFields.length);
+    initParticles(400);
+  })
+  .catch(err => {
+    console.error("Wind field load error:", err);
+  });
+  
+
+
+  function interpolateWindBlended(lat, lon, t) {
+    if (!windFields.length) return null;
+  
+    // Which two wind snapshots are we between?
+    const n = windFields.length;
+    const totalSpan = n - 1;
+  
+    const pos = (t % totalSpan);
+    const k0 = Math.floor(pos);
+    const k1 = Math.min(k0 + 1, totalSpan);
+    const alpha = pos - k0;
+  
+    const w0 = windFields[k0];
+    const w1 = windFields[k1];
+  
+    const meta = w0.meta;
+    const { lat_min, lat_max, lon_min, lon_max, nlat, nlon } = meta;
+  
+    // Handle 0..360 lon grids
     let lonQ = lon;
     if (lon_min > 180 && lonQ < 0) lonQ += 360;
   
     if (
-      lat < Math.min(lat_min, lat_max) || lat > Math.max(lat_min, lat_max) ||
-      lonQ < Math.min(lon_min, lon_max) || lonQ > Math.max(lon_min, lon_max)
+      lat < Math.min(lat_min, lat_max) ||
+      lat > Math.max(lat_min, lat_max) ||
+      lonQ < Math.min(lon_min, lon_max) ||
+      lonQ > Math.max(lon_min, lon_max)
     ) return null;
   
-    const latAscending = lat_max > lat_min;
+    const dLat = (lat_max - lat_min) / (nlat - 1);
+    const dLon = (lon_max - lon_min) / (nlon - 1);
   
-    const dLat = Math.abs(lat_max - lat_min) / (nlat - 1);
-    const dLon = Math.abs(lon_max - lon_min) / (nlon - 1);
-  
-    const fi = latAscending
-      ? (lat - lat_min) / dLat
-      : (lat_max - lat) / dLat;
-  
+    const fi = (lat - lat_min) / dLat;
     const fj = (lonQ - lon_min) / dLon;
   
     const i0 = Math.floor(fi);
@@ -141,37 +176,44 @@
     const ti = fi - i0;
     const tj = fj - j0;
   
-    const u00 = windField.u[i0][j0];
-    const u10 = windField.u[i1][j0];
-    const u01 = windField.u[i0][j1];
-    const u11 = windField.u[i1][j1];
+    function bilinear(arr) {
+      const v00 = arr[i0][j0];
+      const v10 = arr[i1][j0];
+      const v01 = arr[i0][j1];
+      const v11 = arr[i1][j1];
   
-    const v00 = windField.v[i0][j0];
-    const v10 = windField.v[i1][j0];
-    const v01 = windField.v[i0][j1];
-    const v11 = windField.v[i1][j1];
+      if (
+        !isFinite(v00) || !isFinite(v10) ||
+        !isFinite(v01) || !isFinite(v11)
+      ) return null;
+  
+      return (
+        v00 * (1 - ti) * (1 - tj) +
+        v10 * ti * (1 - tj) +
+        v01 * (1 - ti) * tj +
+        v11 * ti * tj
+      );
+    }
+  
+    const u0 = bilinear(w0.u);
+    const v0 = bilinear(w0.v);
+    const u1 = bilinear(w1.u);
+    const v1 = bilinear(w1.v);
   
     if (
-      !isFinite(u00) || !isFinite(u10) ||
-      !isFinite(u01) || !isFinite(u11) ||
-      !isFinite(v00) || !isFinite(v10) ||
-      !isFinite(v01) || !isFinite(v11)
+      u0 === null || v0 === null ||
+      u1 === null || v1 === null
     ) return null;
   
-    const u =
-      u00 * (1 - ti) * (1 - tj) +
-      u10 * ti * (1 - tj) +
-      u01 * (1 - ti) * tj +
-      u11 * ti * tj;
-  
-    const v =
-      v00 * (1 - ti) * (1 - tj) +
-      v10 * ti * (1 - tj) +
-      v01 * (1 - ti) * tj +
-      v11 * ti * tj;
+    // 🔥 TIME BLEND
+    const u = u0 * (1 - alpha) + u1 * alpha;
+    const v = v0 * (1 - alpha) + v1 * alpha;
   
     return { u, v };
   }
+
+
+  
 
 
   // ─────────────────────────────────────────
@@ -203,7 +245,8 @@
     const bounds = leafletMap.getBounds();
   
     for (const p of particles) {
-      const w = interpolateWind(p.lat, p.lon);
+      const w = interpolateWindBlended(p.lat, p.lon, blendTime);
+
   
       // If wind missing → respawn
       if (!w) {
@@ -277,7 +320,9 @@
     lastTime = now;
   
     const dtClamped = Math.min(dt, 0.05);
-  
+
+    blendTime += dtClamped * 0.2;   // controls curvature & evolution
+    
     evolveParticles(dtClamped * 40);
     drawParticles();
   }
