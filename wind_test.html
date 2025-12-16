@@ -97,8 +97,10 @@
     "data/AB_wind_003.json"
   ];
   
-  let windFields = [];   // array of { meta, u, v }
-  let currentBlend = 0; // animation time
+  let windFields = [];
+  let particles = [];
+  let blendTime = 0;
+
 
 
   const WIND_FILES = [
@@ -108,8 +110,6 @@
     "data/AB_wind_003.json"
   ];
   
-  let windFields = [];   // array of wind snapshots
-  let blendTime = 0;     // animation time
   
   Promise.all(
     WIND_FILES.map(f =>
