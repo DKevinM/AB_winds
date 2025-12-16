@@ -85,8 +85,9 @@
   // ─────────────────────────────────────────
   // 2) Wind field JSON + simple interpolation
   // ─────────────────────────────────────────
-  let windFields = null;   // will hold { meta, lats, lons, u, v }
+  let windFields = [];
   let particles = [];
+  let blendTime = 0;
 
   
   // TODO: adjust this path to wherever your JSON lives
@@ -97,9 +98,7 @@
     "data/AB_wind_003.json"
   ];
   
-  let windFields = [];
-  let particles = [];
-  let blendTime = 0;
+
 
 
 
