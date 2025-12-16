@@ -42,6 +42,15 @@
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(leafletMap);
 
+
+  function respawnParticle(p) {
+    const b = leafletMap.getBounds();
+    p.lat = b.getSouth() + Math.random() * (b.getNorth() - b.getSouth());
+    p.lon = b.getWest()  + Math.random() * (b.getEast()  - b.getWest());
+  }
+
+
+  
   // ─────────────────────────────────────────
   // Canvas overlay (Leaflet pane version)
   // ─────────────────────────────────────────
@@ -162,29 +171,36 @@
   
 
 
-  function evolveParticles(dtSeconds = 300) {
+  function evolveParticles(dtSeconds) {
     if (!particles.length || !windField) return;
   
-    for (const p of particles) {
+    const bounds = leafletMap.getBounds();
   
+    for (const p of particles) {
       const w = interpolateWind(p.lat, p.lon);
   
-      // If no wind here, just skip movement this frame
-      if (!w) continue;
+      // If wind missing → respawn
+      if (!w) {
+        respawnParticle(p);
+        continue;
+      }
   
       const EARTH_R = 6371000;
   
       const dlat = (w.v * dtSeconds) / EARTH_R * (180 / Math.PI);
       const dlon = (w.u * dtSeconds) /
-                   (EARTH_R * Math.cos(p.lat * Math.PI / 180)) *
-                   (180 / Math.PI);
+        (EARTH_R * Math.cos(p.lat * Math.PI / 180)) *
+        (180 / Math.PI);
   
       p.lat += dlat;
       p.lon += dlon;
-
+  
+      // If particle leaves map → respawn
+      if (!bounds.contains([p.lat, p.lon])) {
+        respawnParticle(p);
+      }
     }
   }
-
   
   
   function drawParticles() {
@@ -207,7 +223,7 @@
   
       windCtx.beginPath();
       windCtx.moveTo(pt.x, pt.y);
-      windCtx.lineTo(pt.x - 4, pt.y - 4);
+      windCtx.lineTo(pt.x - 12, pt.y - 12);
       windCtx.stroke();
     }
   }
@@ -226,7 +242,7 @@
     // Cap dt to avoid jumps
     const dtClamped = Math.min(dt, 0.05);
   
-    evolveParticles(dtClamped * 200); // visual speed factor
+    evolveParticles(dtClamped * 1200); // visual speed factor
     drawParticles();
   }
   
