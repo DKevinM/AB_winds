@@ -99,7 +99,7 @@
       windField = js;
       console.log("Loaded wind field:", js.meta);
 
-      initParticles(150);   // your function
+      initParticles(400);   // your function
     })
     .catch(err => {
       console.error("Failed to load wind field:", err);
@@ -177,7 +177,7 @@
   // 3) Your particle functions (slotted here)
   // ─────────────────────────────────────────
   
-  function initParticles(n = 200) {
+  function initParticles(n = 400) {
     particles = [];
   
     const m = windField.meta;
@@ -231,7 +231,7 @@
   function drawParticles() {
     // Fade previous frame
     windCtx.globalCompositeOperation = "source-over";
-    windCtx.fillStyle = "rgba(0, 0, 0, 0.08)";
+    windCtx.fillStyle = "rgba(0, 0, 0, 0.05)";
     windCtx.fillRect(0, 0, windCanvas.width, windCanvas.height);
   
     windCtx.strokeStyle = "lime";
@@ -248,7 +248,7 @@
   
       windCtx.beginPath();
       windCtx.moveTo(pt.x, pt.y);
-      windCtx.lineTo(pt.x - 12, pt.y - 12);
+      windCtx.lineTo(pt.x - 18, pt.y - 18);
       windCtx.stroke();
     }
   }
