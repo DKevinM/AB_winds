@@ -158,8 +158,6 @@
         age: Math.random() * 100
       });
     }
-  
-    console.log("Particles seeded:", particles.length);
   }
   
 
@@ -183,10 +181,6 @@
   
       p.lat += dlat;
       p.lon += dlon;
-
-      if (Math.random() < 0.002) {
-        console.log("Δlat, Δlon", dlat, dlon);
-      }
 
     }
   }
