@@ -235,36 +235,36 @@
     windCtx.fillStyle = "rgba(0, 0, 0, 0.05)";
     windCtx.fillRect(0, 0, windCanvas.width, windCanvas.height);
   
-  for (const p of particles) {
-    const pt = leafletMap.latLngToContainerPoint([p.lat, p.lon]);
+    for (const p of particles) {
+      const pt = leafletMap.latLngToContainerPoint([p.lat, p.lon]);
   
-    if (
-      pt.x < 0 || pt.y < 0 ||
-      pt.x > windCanvas.width ||
-      pt.y > windCanvas.height
-    ) continue;
+      if (
+        pt.x < 0 || pt.y < 0 ||
+        pt.x > windCanvas.width ||
+        pt.y > windCanvas.height
+      ) continue;
   
-    // 🔹 Recompute wind *only* for colour (cheap)
-    const w = interpolateWind(p.lat, p.lon);
-    if (!w) continue;
+      // Colour by speed
+      const w = interpolateWind(p.lat, p.lon);
+      if (!w) continue;
   
-    // 🔹 SPEED (m/s)
-    const speed = Math.hypot(w.u, w.v);
+      const speed = Math.hypot(w.u, w.v);
   
-    // 🔹 SPEED → COLOUR (Nullschool-style)
-    if (speed < 2)       windCtx.strokeStyle = "#2c7bb6"; // blue
-    else if (speed < 5)  windCtx.strokeStyle = "#abd9e9";
-    else if (speed < 8)  windCtx.strokeStyle = "#ffffbf";
-    else if (speed <12)  windCtx.strokeStyle = "#fdae61";
-    else                 windCtx.strokeStyle = "#d7191c"; // red
+      if (speed < 2)       windCtx.strokeStyle = "#2c7bb6";
+      else if (speed < 5)  windCtx.strokeStyle = "#abd9e9";
+      else if (speed < 8)  windCtx.strokeStyle = "#ffffbf";
+      else if (speed <12)  windCtx.strokeStyle = "#fdae61";
+      else                 windCtx.strokeStyle = "#d7191c";
   
-    windCtx.lineWidth = 1;
+      windCtx.lineWidth = 1;
   
-    windCtx.beginPath();
-    windCtx.moveTo(pt.x, pt.y);
-    windCtx.lineTo(pt.x - 18, pt.y - 18);
-    windCtx.stroke();
+      windCtx.beginPath();
+      windCtx.moveTo(pt.x, pt.y);
+      windCtx.lineTo(pt.x - 18, pt.y - 18);
+      windCtx.stroke();
+    }
   }
+
   
   let lastTime = performance.now();
   
@@ -273,17 +273,17 @@
   
     if (!windField || !particles.length) return;
   
-    const dt = (now - lastTime) / 1000; // seconds since last frame
+    const dt = (now - lastTime) / 1000;
     lastTime = now;
   
-    // Cap dt to avoid jumps
     const dtClamped = Math.min(dt, 0.05);
   
-    evolveParticles(dtClamped * 40); // visual speed factor
+    evolveParticles(dtClamped * 40);
     drawParticles();
   }
   
   requestAnimationFrame(frame);
+
 
 </script>
 </body>
