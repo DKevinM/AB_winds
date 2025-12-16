@@ -107,13 +107,11 @@
 
   // Nearest-neighbour interpolation of u/v at a given lat/lon.
   // Fine for testing; we can upgrade to bilinear later.
-
   function interpolateWind(lat, lon) {
     if (!windField || !windField.meta) return null;
   
     const { lat_min, lat_max, lon_min, lon_max, nlat, nlon } = windField.meta;
   
-    // Handle 0..360 grids
     let lonQ = lon;
     if (lon_min > 180 && lonQ < 0) lonQ += 360;
   
@@ -122,10 +120,15 @@
       lonQ < Math.min(lon_min, lon_max) || lonQ > Math.max(lon_min, lon_max)
     ) return null;
   
-    const dLat = (lat_max - lat_min) / (nlat - 1);
-    const dLon = (lon_max - lon_min) / (nlon - 1);
+    const latAscending = lat_max > lat_min;
   
-    const fi = (lat - lat_min) / dLat;
+    const dLat = Math.abs(lat_max - lat_min) / (nlat - 1);
+    const dLon = Math.abs(lon_max - lon_min) / (nlon - 1);
+  
+    const fi = latAscending
+      ? (lat - lat_min) / dLat
+      : (lat_max - lat) / dLat;
+  
     const fj = (lonQ - lon_min) / dLon;
   
     const i0 = Math.floor(fi);
@@ -133,10 +136,7 @@
     const i1 = i0 + 1;
     const j1 = j0 + 1;
   
-    if (
-      i0 < 0 || j0 < 0 ||
-      i1 >= nlat || j1 >= nlon
-    ) return null;
+    if (i0 < 0 || j0 < 0 || i1 >= nlat || j1 >= nlon) return null;
   
     const ti = fi - i0;
     const tj = fj - j0;
@@ -267,7 +267,7 @@
     // Cap dt to avoid jumps
     const dtClamped = Math.min(dt, 0.05);
   
-    evolveParticles(dtClamped * 1200); // visual speed factor
+    evolveParticles(dtClamped * 40); // visual speed factor
     drawParticles();
   }
   
