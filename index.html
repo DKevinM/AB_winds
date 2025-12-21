@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Alberta Wind (ECCC HRDPS)</title>
+
+  <style>
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      background: #000;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    /* Earth typically builds its own UI, but this ensures there is a full-screen mount */
+    #app {
+      position: fixed;
+      inset: 0;
+    }
+
+    /* Optional: quick title badge so you know you're in the right file */
+    #badge {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      z-index: 9999;
+      padding: 8px 10px;
+      background: rgba(0,0,0,0.55);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      font-size: 13px;
+      user-select: none;
+      pointer-events: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app"></div>
+  <div id="badge">Alberta Wind • ECCC HRDPS</div>
+
+  <!-- Third-party libs expected by classic cambecc/earth builds -->
+  <!-- d3 v3 is important for older earth.js code (uses d3.set, etc.) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/1.6.27/topojson.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.13.6/underscore-min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/when/3.7.8/when.min.js"></script>
+
+  <!-- Your local engine files -->
+  <script src="src/micro.js"></script>
+  <script src="src/globes.js"></script>
+  <script src="src/products.js"></script>
+  <script src="src/earth.js"></script>
+
+  <script>
+    (function boot() {
+      // Force Alberta as the default product if no state is specified.
+      // Different forks parse state from hash and/or query; hash is the safest.
+      if (!location.hash || location.hash === "#") {
+        // Minimal state: just param.
+        // (If your UI expects other keys, we can add them later.)
+        location.hash = "param=alberta_wind";
+      }
+
+      // Start the app using whichever entrypoint exists in your earth.js.
+      // This makes the index.html resilient across slightly different forks.
+      function startEarth() {
+        try {
+          if (window.earth && typeof window.earth.run === "function") return window.earth.run();
+          if (window.earth && typeof window.earth.init === "function") return window.earth.init();
+          if (window.earth && typeof window.earth.start === "function") return window.earth.start();
+
+          if (window.Earth && typeof window.Earth.run === "function") return window.Earth.run();
+          if (window.Earth && typeof window.Earth.init === "function") return window.Earth.init();
+          if (window.Earth && typeof window.Earth.start === "function") return window.Earth.start();
+
+          console.error("Could not find a start function. Inspect src/earth.js bottom export (earth.run/init/start).");
+        } catch (e) {
+          console.error("Earth failed to start:", e);
+        }
+      }
+
+      // Give scripts a tick to register globals in some browsers.
+      setTimeout(startEarth, 0);
+    })();
+  </script>
+</body>
+</html>
