@@ -2,86 +2,78 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <title>AB Winds (Earth-style)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Alberta Wind (ECCC HRDPS)</title>
 
   <style>
-    html, body { height: 100%; margin: 0; background: #000; overflow: hidden; }
-    #app { position: fixed; inset: 0; }
-    #badge {
-      position: fixed;
-      top: 12px; left: 12px;
-      z-index: 9999;
-      padding: 8px 10px;
-      background: rgba(0,0,0,0.55);
-      color: #fff;
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 8px;
-      font: 13px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      pointer-events: none;
-      user-select: none;
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: #0b0f14;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
     }
+    #display {
+      position: absolute;
+      inset: 0;
+    }
+    /* Earth tends to inject SVG/canvas; keep it full-screen */
+    svg, canvas { display: block; }
   </style>
 </head>
 
 <body>
-  <div id="app"></div>
-  <div id="badge">Alberta Wind • ECCC HRDPS</div>
+  <div id="display"></div>
 
-  <!--
-    IMPORTANT: Order matters for this fork:
-    jQuery -> underscore -> backbone -> d3 -> topojson -> when -> your src/*.js
-  -->
+  <!-- 1) Core legacy deps (ORDER MATTERS) -->
+  <!-- Underscore first, then Backbone -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.1.2/backbone-min.js"></script> <!-- Backbone global needed by micro.js --> 
+  <!-- D3 v3 is what cambecc/earth expects -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js"></script>
 
-  <!-- jQuery + underscore + backbone (micro.js expects Backbone) -->
-  <script src="https://cdn.jsdelivr.net/npm/jquery@2.2.4/dist/jquery.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/underscore@1.8.3/underscore-min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/backbone@1.4.1/backbone-min.js"></script>
+  <!-- TopoJSON: use an older 1.6.x compatible build (avoids the MIME issues you saw) -->
+  <script src="https://unpkg.com/topojson@1.6.26/dist/topojson.min.js"></script>
 
-  <!-- d3 v3 (older earth.js/micro.js code relies on d3.v3 APIs like d3.set) -->
-  <script src="https://cdn.jsdelivr.net/npm/d3@3.5.17/d3.min.js"></script>
+  <!-- when: must be the *browser* build, not the CommonJS entry (avoids `module is not defined`) -->
+  <script src="https://unpkg.com/when@3.7.8/dist/browser/when.min.js"></script>
 
-  <!-- topojson (your cdnjs link returned HTML; jsdelivr is reliable) -->
-  <script src="https://cdn.jsdelivr.net/npm/topojson@1.6.27/topojson.min.js"></script>
+  <!-- 2) Your copied Earth source files -->
+  <script src="./src/micro.js"></script>
+  <script src="./src/products.js"></script>
+  <script src="./src/globes.js"></script>
+  <script src="./src/earth.js"></script>
 
-  <!-- when.js: use a browser global build (avoid CommonJS/AMD module errors) -->
-  <script src="https://cdn.jsdelivr.net/npm/when@3.7.8/when.js"></script>
-
-  <!-- Your local engine files -->
-  <script src="src/micro.js"></script>
-  <script src="src/globes.js"></script>
-  <script src="src/products.js"></script>
-  <script src="src/earth.js"></script>
-
+  <!-- 3) Boot -->
   <script>
-    (function boot() {
-      // Default to Alberta product if no state is specified.
-      if (!location.hash || location.hash === "#") {
-        location.hash = "param=alberta_wind";
-      }
+    (function bootEarth() {
+      // Earth forks vary: some export `earth`, others `Earth`, and start via init/run/start.
+      const starters = [
+        () => window.earth && typeof earth.init === "function" && earth.init(),
+        () => window.earth && typeof earth.run  === "function" && earth.run(),
+        () => window.earth && typeof earth.start=== "function" && earth.start(),
+        () => window.earth && typeof earth.main === "function" && earth.main(),
+        () => window.Earth && typeof Earth.init === "function" && Earth.init(),
+        () => window.Earth && typeof Earth.run  === "function" && Earth.run(),
+        () => window.Earth && typeof Earth.start=== "function" && Earth.start()
+      ];
 
-      function startEarth() {
+      for (const fn of starters) {
         try {
-          // Common patterns across earth forks:
-          if (window.earth && typeof window.earth.run === "function") return window.earth.run();
-          if (window.earth && typeof window.earth.init === "function") return window.earth.init();
-          if (window.earth && typeof window.earth.start === "function") return window.earth.start();
-          if (window.earth && typeof window.earth === "function") return window.earth();
-
-          if (window.Earth && typeof window.Earth.run === "function") return window.Earth.run();
-          if (window.Earth && typeof window.Earth.init === "function") return window.Earth.init();
-          if (window.Earth && typeof window.Earth.start === "function") return window.Earth.start();
-          if (window.Earth && typeof window.Earth === "function") return window.Earth();
-
-          // If we got here, earth.js loaded but didn't expose a known entrypoint.
-          console.error("Earth loaded but no known start function found. Search src/earth.js for 'init(' or 'run(' and tell me what it exports.");
-        } catch (e) {
-          console.error("Earth failed to start:", e);
-        }
+          const result = fn();
+          // Some starters return nothing; we just stop after the first success-ish call.
+          if (result !== false) return;
+        } catch (e) { /* keep trying */ }
       }
 
-      // Delay one tick so globals settle
-      setTimeout(startEarth, 0);
+      console.error("Earth loaded, but no known start function found.",
+        "Open ./src/earth.js and search near the bottom for: init(  run(  start(  main(");
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        "<div style='position:fixed;left:12px;bottom:12px;color:#fff;background:#b00020;padding:10px;border-radius:8px;max-width:720px'>" +
+        "Earth scripts loaded, but the start function name didn’t match. Open console for details." +
+        "</div>"
+      );
     })();
   </script>
 </body>
