@@ -107,8 +107,66 @@ var products = function() {
         }
     }
 
+    
     var FACTORIES = {
 
+        "alberta_wind": {
+            matches: _.matches({ param: "alberta_wind" }),
+        
+            create: function() {
+                return buildProduct({
+                    field: "vector",
+                    type: "wind",
+        
+                    description: {
+                        name: { en: "Alberta Wind", ja: "アルバータの風" },
+                        qualifier: { en: " (ECCC)", ja: " (ECCC)" }
+                    },
+        
+                    // 👇 your files
+                    paths: [
+                        "data/AB_wind_000.json",
+                        "data/AB_wind_001.json",
+                        "data/AB_wind_002.json",
+                        "data/AB_wind_003.json"
+                    ],
+        
+                    // 👇 simple builder — NOT GFS
+                    builder: function(file) {
+                        var uData = file[0].data;
+                        var vData = file[1].data;
+        
+                        return {
+                            header: file[0].header,
+                            interpolate: bilinearInterpolateVector,
+                            data: function(i) {
+                                return [uData[i], vData[i]];
+                            }
+                        };
+                    },
+        
+                    units: [
+                        { label: "km/h", conversion: x => x * 3.6, precision: 0 },
+                        { label: "m/s",  conversion: x => x,       precision: 1 }
+                    ],
+        
+                    scale: {
+                        bounds: [0, 40],
+                        gradient: function(v, a) {
+                            return µ.extendedSinebowColor(v / 40, a);
+                        }
+                    },
+        
+                    particles: {
+                        velocityScale: 1 / 60000,
+                        maxIntensity: 15
+                    }
+                });
+            }
+        },
+
+
+        
         "wind": {
             matches: _.matches({param: "wind"}),
             create: function(attr) {
