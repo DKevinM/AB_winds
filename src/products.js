@@ -111,59 +111,40 @@ var products = function() {
     var FACTORIES = {
 
         "alberta_wind": {
-            matches: _.matches({ param: "alberta_wind" }),
-        
-            create: function() {
+            matches: _.matches({param: "alberta_wind"}),
+            create: function(attr) {
                 return buildProduct({
                     field: "vector",
                     type: "wind",
-        
-                    description: {
-                        name: { en: "Alberta Wind", ja: "アルバータの風" },
-                        qualifier: { en: " (ECCC)", ja: " (ECCC)" }
-                    },
-        
-                    // 👇 your files
+                    description: localize({
+                        name: {en: "Alberta Wind", ja: "アルバータの風"},
+                        qualifier: {en: " (ECCC HRDPS 10m)", ja: " (ECCC HRDPS 10m)"}
+                    }),
                     paths: [
-                        "data/AB_wind_000.json",
-                        "data/AB_wind_001.json",
-                        "data/AB_wind_002.json",
-                        "data/AB_wind_003.json"
+                        "data/AB_u_000.json", "data/AB_v_000.json"
                     ],
-        
-                    // 👇 simple builder — NOT GFS
-                    builder: function(file) {
-                        var uData = file[0].data;
-                        var vData = file[1].data;
-        
+                    date: gfsDate({date: "current", hour: "00"}), // or just new Date() if you prefer
+                    builder: function(uFile, vFile) {
+                        var uData = uFile.data, vData = vFile.data;
                         return {
-                            header: file[0].header,
+                            header: uFile.header,
                             interpolate: bilinearInterpolateVector,
-                            data: function(i) {
-                                return [uData[i], vData[i]];
-                            }
+                            data: function(i) { return [uData[i], vData[i]]; }
                         };
                     },
-        
                     units: [
-                        { label: "km/h", conversion: x => x * 3.6, precision: 0 },
-                        { label: "m/s",  conversion: x => x,       precision: 1 }
+                        {label: "km/h", conversion: function(x) { return x * 3.6; }, precision: 0},
+                        {label: "m/s",  conversion: function(x) { return x; },       precision: 1}
                     ],
-        
                     scale: {
                         bounds: [0, 40],
-                        gradient: function(v, a) {
-                            return µ.extendedSinebowColor(v / 40, a);
-                        }
+                        gradient: function(v, a) { return µ.extendedSinebowColor(Math.min(v, 40) / 40, a); }
                     },
-        
-                    particles: {
-                        velocityScale: 1 / 60000,
-                        maxIntensity: 15
-                    }
+                    particles: {velocityScale: 1/60000, maxIntensity: 17}
                 });
             }
         },
+
 
 
         
