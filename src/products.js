@@ -112,39 +112,52 @@ var products = function() {
     var FACTORIES = {
 
         "alberta_wind": {
-            matches: _.matches({param: "alberta_wind"}),
-            create: function(attr) {
-                return buildProduct({
-                    field: "vector",
-                    type: "wind",
-                    description: localize({
-                        name: {en: "Alberta Wind", ja: "アルバータの風"},
-                        qualifier: {en: " (ECCC HRDPS 10m)", ja: " (ECCC HRDPS 10m)"}
-                    }),
-                    paths: [
-                        "data/AB_u_000.json", "data/AB_v_000.json"
-                    ],
-                    date: gfsDate({date: "current", hour: "00"}), // or just new Date() if you prefer
-                    builder: function(uFile, vFile) {
-                        var uData = uFile.data, vData = vFile.data;
-                        return {
-                            header: uFile.header,
-                            interpolate: bilinearInterpolateVector,
-                            data: function(i) { return [uData[i], vData[i]]; }
-                        };
-                    },
-                    units: [
-                        {label: "km/h", conversion: function(x) { return x * 3.6; }, precision: 0},
-                        {label: "m/s",  conversion: function(x) { return x; },       precision: 1}
-                    ],
-                    scale: {
-                        bounds: [0, 40],
-                        gradient: function(v, a) { return µ.extendedSinebowColor(Math.min(v, 40) / 40, a); }
-                    },
-                    particles: {velocityScale: 1/60000, maxIntensity: 17}
-                });
-            }
-        },
+          matches: _.matches({ param: "alberta_wind" }),
+          create: function() {
+            return buildProduct({
+              field: "vector",
+              type: "wind",
+              description: localize({
+                name: { en: "Alberta Wind", ja: "アルバータの風" },
+                qualifier: { en: "HRDPS 10 m", ja: "HRDPS 10 m" }
+              }),
+        
+              // 🔑 THIS IS THE CRITICAL LINE
+              paths: ["data/AB_u_000.json", "data/AB_v_000.json"],
+        
+              builder: function(uFile, vFile) {
+                var uData = uFile.data;
+                var vData = vFile.data;
+        
+                return {
+                  header: uFile.header,
+                  interpolate: bilinearInterpolateVector,
+                  data: function(i) {
+                    return [uData[i], vData[i]];
+                  }
+                };
+              },
+        
+              units: [
+                { label: "km/h", conversion: function(x){ return x * 3.6; }, precision: 0 },
+                { label: "m/s",  conversion: function(x){ return x; },       precision: 1 }
+              ],
+        
+              scale: {
+                bounds: [0, 40],
+                gradient: function(v, a) {
+                  return µ.extendedSinebowColor(Math.min(v, 40) / 40, a);
+                }
+              },
+        
+              particles: {
+                velocityScale: 1 / 60000,
+                maxIntensity: 17
+              }
+            });
+          }
+        }
+
 
 
 
