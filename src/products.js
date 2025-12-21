@@ -9,7 +9,8 @@
 var products = function() {
     "use strict";
 
-    var WEATHER_PATH = "/data/weather";
+    // var WEATHER_PATH = "/data/weather";
+    var WEATHER_PATH = "/data";
     var OSCAR_PATH = "/data/oscar";
     var catalogs = {
         // The OSCAR catalog is an array of file names, sorted and prefixed with yyyyMMdd. Last item is the
