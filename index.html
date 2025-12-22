@@ -1,76 +1,51 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>AB Winds (Earth-style)</title>
+  <title>Alberta Wind</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <style>
     html, body {
-      height: 100%;
       margin: 0;
-      background: #0b0f14;
+      padding: 0;
+      height: 100%;
       overflow: hidden;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: #000;
     }
+
     #display {
       position: absolute;
       inset: 0;
     }
-    /* Earth tends to inject SVG/canvas; keep it full-screen */
-    svg, canvas { display: block; }
+
+    canvas {
+      display: block;
+    }
   </style>
-</head>
 
-<body>
-  <div id="display"></div>
-  <div id="status"></div>
-  <div id="map"></div>
-  <div id="globe"></div>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.1.2/backbone-min.js"></script>
+  <!-- REQUIRED LIBS (ORDER MATTERS) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.13.6/underscore-min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.4.1/backbone-min.js"></script>
   <script src="https://unpkg.com/when@3.7.8/dist/browser/when.min.js"></script>
-  
+
+  <!-- EARTH CORE -->
   <script src="src/micro.js"></script>
   <script src="src/products.js"></script>
   <script src="src/globes.js"></script>
   <script src="src/earth.js"></script>
+</head>
 
-  <!-- 3) Boot -->
+<body>
+  <!-- 🔑 THIS DIV IS WHAT WAS MISSING -->
+  <div id="display"></div>
+
   <script>
-    location.hash = "param=alberta_wind";
-
-    (function bootEarth() {
-      // Earth forks vary: some export `earth`, others `Earth`, and start via init/run/start.
-      const starters = [
-        () => window.earth && typeof earth.init === "function" && earth.init(),
-        () => window.earth && typeof earth.run  === "function" && earth.run(),
-        () => window.earth && typeof earth.start=== "function" && earth.start(),
-        () => window.earth && typeof earth.main === "function" && earth.main(),
-        () => window.Earth && typeof Earth.init === "function" && Earth.init(),
-        () => window.Earth && typeof Earth.run  === "function" && Earth.run(),
-        () => window.Earth && typeof Earth.start=== "function" && Earth.start()
-      ];
-
-      for (const fn of starters) {
-        try {
-          const result = fn();
-          // Some starters return nothing; we just stop after the first success-ish call.
-          if (result !== false) return;
-        } catch (e) { /* keep trying */ }
-      }
-
-      console.error("Earth loaded, but no known start function found.",
-        "Open ./src/earth.js and search near the bottom for: init(  run(  start(  main(");
-      document.body.insertAdjacentHTML(
-        "beforeend",
-        "<div style='position:fixed;left:12px;bottom:12px;color:#fff;background:#b00020;padding:10px;border-radius:8px;max-width:720px'>" +
-        "Earth scripts loaded, but the start function name didn’t match. Open console for details." +
-        "</div>"
-      );
-    })();
+    // Kick Earth after DOM exists
+    window.addEventListener("load", function () {
+      earth.init();
+    });
   </script>
 </body>
 </html>
