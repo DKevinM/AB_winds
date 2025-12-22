@@ -179,6 +179,8 @@
     }
 
     function buildField(uJson, vJson) {
+      console.log("AB TEST FIXED:", field.sample(54.5, -114.0));
+
       const uh = readHeader(uJson);
       const vh = readHeader(vJson);
 
@@ -202,19 +204,27 @@
       // If dy is negative, grid goes southward as index increases.
       return {
         sample: (lat, lon) => {
-          // map lon into same range if needed
+        
+          // longitude index (west → east)
           const i = Math.floor((lon - lon0) / lonStep);
+          if (i < 0 || i >= nx) return null;
+        
+          // latitude index (HRDPS = south → north)
           const j = Math.floor((lat - lat0) / latStep);
-
-          if (i < 0 || j < 0 || i >= nx || j >= ny) return null;
+          if (j < 0 || j >= ny) return null;
+        
           const idx = j * nx + i;
-
+        
           const uu = u[idx];
           const vv = v[idx];
-          if (!isFinite(uu) || !isFinite(vv)) return null;
-
-          const speed = Math.sqrt(uu*uu + vv*vv);
-          return { u: uu, v: vv, speed };
+        
+          if (!Number.isFinite(uu) || !Number.isFinite(vv)) return null;
+        
+          return {
+            u: uu,
+            v: vv,
+            speed: Math.sqrt(uu * uu + vv * vv)
+          };
         }
       };
     }
