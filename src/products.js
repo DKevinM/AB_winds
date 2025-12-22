@@ -152,8 +152,7 @@ var products = function() {
               particles: { velocityScale: 1 / 60000, maxIntensity: 17 }
             });
           }
-        }
-    };
+        },
 
 
         "wind": {
