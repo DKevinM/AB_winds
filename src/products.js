@@ -157,11 +157,8 @@ var products = function() {
             });
           }
         }
+    };
 
-
-
-
-        
         "wind": {
             matches: _.matches({param: "wind"}),
             create: function(attr) {
