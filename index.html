@@ -183,96 +183,81 @@
     }
 
     function buildField(uJson, vJson) {
-      // First, identify your exact data structure
-      console.log("DEBUG: Full U object (first 3 entries):", 
-                  JSON.stringify(uJson).slice(0, 500));
+      console.log("DEBUG: First 50 U values:", uJson.data.slice(0, 50));
+      console.log("DEBUG: First 50 V values:", vJson.data.slice(0, 50));
       
-      // Try different common ECCC structures
-      const uh = uJson.header || uJson.metadata || uJson;
-      const vh = vJson.header || vJson.metadata || vJson;
+      const uh = uJson.header;
+      const vh = vJson.header;
       
-      console.log("Detected U header:", uh);
-      console.log("Detected V header:", vh);
+      // Your actual grid parameters
+      const nx = uh.nx;          // 354
+      const ny = uh.ny;          // 540
+      const lon0 = uh.lo1;       // -121.76788
+      const lat0 = uh.la1;       // 60.64398 (NORTHERN point)
+      const dx = uh.dx;          // 0.04537
+      const dy = uh.dy;          // 0.02274 POSITIVE = goes SOUTHWARD
       
-      // Get dimensions - ECCC often uses these names
-      const nx = uh.nx || uh.Nx || uh.nlon || uh.Ni;
-      const ny = uh.ny || uh.Ny || uh.nlat || uh.Nj;
+      console.log(`Grid: ${nx}x${ny}, Origin: (${lon0}, ${lat0}), dx:${dx}, dy:${dy}`);
+      console.log(`Grid covers: Lon ${lon0} to ${lon0 + dx * (nx-1)}, 
+                   Lat ${lat0} to ${lat0 - dy * (ny-1)}`); // Note: minus because dy positive
       
-      // Get grid bounds - CRITICAL FOR ALBERTA
-      const lon0 = uh.lo1 || uh.longitudeOfFirstGridPoint || uh.lon0;
-      const lat0 = uh.la1 || uh.latitudeOfFirstGridPoint || uh.lat0;
-      const lon1 = uh.lo2 || uh.longitudeOfLastGridPoint;
-      const lat1 = uh.la2 || uh.latitudeOfLastGridPoint;
+      const uData = uJson.data;
+      const vData = vJson.data;
       
-      const dx = uh.dx || uh.DxInDegrees || uh.dlon;
-      const dy = uh.dy || uh.DyInDegrees || uh.dlat;
+      // Find first non-null value
+      let firstNonNull = -1;
+      for (let i = 0; i < uData.length; i++) {
+        if (uData[i] !== null) {
+          firstNonNull = i;
+          break;
+        }
+      }
+      console.log(`First non-null U at index ${firstNonNull}: ${uData[firstNonNull]}`);
       
-      console.log(`Grid: ${nx}x${ny}, Origin: (${lon0}, ${lat0}), dx/dy: ${dx}/${dy}`);
-      
-      // Get data arrays - ECCC might store them differently
-      const uData = uJson.data || uJson.values || uJson.u || 
-                    (uJson.parameters && uJson.parameters[0]?.values);
-      const vData = vJson.data || vJson.values || vJson.v ||
-                    (vJson.parameters && vJson.parameters[0]?.values);
-      
-      if (!uData || !vData) {
-        console.error("Could not find wind data arrays. Available keys in U:", Object.keys(uJson));
-        throw new Error("Missing wind data arrays");
+      // Test different indices to understand data layout
+      console.log("Testing data at various indices:");
+      for (let idx of [1000, 5000, 10000, 50000, 100000]) {
+        console.log(`  [${idx}]: U=${uData[idx]}, V=${vData[idx]}`);
       }
       
-      // ALBERTA-SPECIFIC DEBUG: Test several Alberta locations
-      const testPoints = [
-        [54.5, -114.0],  // Center of Alberta
-        [53.5, -113.5],  // Edmonton
-        [51.0, -114.1],  // Calgary
-        [55.2, -118.8],  // Grande Prairie
-        [49.7, -112.8]   // Lethbridge
-      ];
-      
-      console.log("Testing Alberta grid coverage:");
-      testPoints.forEach(([lat, lon]) => {
-        const i = Math.floor((lon - lon0) / dx);
-        const j = Math.floor((lat - lat0) / dy);
-        const idx = j * nx + i;
-        console.log(`  ${lat}, ${lon}: i=${i}, j=${j}, idx=${idx}, 
-                     inBounds=${i>=0 && i<nx && j>=0 && j<ny}`);
-      });
-      
       return {
-        nx, ny, lon0, lat0, dx, dy, // Return for debugging
+        nx, ny, lon0, lat0, dx, dy,
         sample: (lat, lon) => {
-          // Convert lat/lon to grid indices
+          // Calculate grid indices
+          // lon index: works fine
           const i = Math.floor((lon - lon0) / dx);
-          const j = Math.floor((lat - lat0) / dy);
+          
+          // lat index: CRITICAL - your grid goes SOUTHWARD from northern point
+          // lat0 = 60.64 (north), dy = +0.0227 (southward)
+          // So: lat = lat0 - (j * dy)
+          // Therefore: j = (lat0 - lat) / dy
+          const j = Math.floor((lat0 - lat) / dy);
           
           // Check bounds
           if (i < 0 || i >= nx || j < 0 || j >= ny) {
+            // For debugging: show what's wrong
+            if (Math.abs(lat - 54.5) < 0.5 && Math.abs(lon + 114) < 1) {
+              console.log(`Out of bounds: lat=${lat}, lon=${lon}, i=${i}, j=${j}, 
+                          bounds: i[0-${nx-1}], j[0-${ny-1}]`);
+            }
             return null;
           }
           
-          // **CRITICAL**: ECCC data is often stored SOUTH-TO-NORTH
-          // If dy is positive but your data goes northward, need to flip j
-          let dataIndex;
+          // Calculate data index (row-major: j rows down, i columns across)
+          const dataIndex = j * nx + i;
           
-          // Option 1: If grid goes northward (dy > 0)
-          if (dy > 0) {
-            dataIndex = j * nx + i;
-          } 
-          // Option 2: If grid goes southward (dy < 0)
-          else {
-            dataIndex = (ny - 1 - j) * nx + i;
-          }
-          
-          // For debugging
+          // Debug for Alberta center
           if (Math.abs(lat - 54.5) < 0.1 && Math.abs(lon + 114.0) < 0.1) {
-            console.log(`DEBUG Center AB: lat=${lat}, lon=${lon}, i=${i}, j=${j}, idx=${dataIndex}`);
+            console.log(`Alberta center: lat=${lat}, lon=${lon}, i=${i}, j=${j}, idx=${dataIndex}`);
+            console.log(`  U[${dataIndex}]=${uData[dataIndex]}, V[${dataIndex}]=${vData[dataIndex]}`);
           }
           
           const uu = uData[dataIndex];
           const vv = vData[dataIndex];
           
-          if (uu === undefined || vv === undefined || 
-              uu === null || vv === null) {
+          // Handle null/missing data
+          if (uu === null || vv === null || 
+              uu === undefined || vv === undefined) {
             return null;
           }
           
@@ -298,6 +283,19 @@
       const [uJson, vJson] = await Promise.all([uRes.json(), vRes.json()]);
       field = buildField(uJson, vJson);
 
+  
+      // NEW: Test a grid of points to see coverage
+      console.log("=== DATA COVERAGE TEST ===");
+      const testLats = [60, 58, 56, 54, 52, 50];  // From north to south
+      const testLons = [-125, -120, -115, -110];  // West to east
+      
+      for (const lat of testLats) {
+        for (const lon of testLons) {
+          const result = field.sample(lat, lon);
+          console.log(`(${lat}, ${lon}): ${result ? `U=${result.u.toFixed(2)}, V=${result.v.toFixed(2)}` : 'NO DATA'}`);
+        }
+      }
+      
         // DEBUG: Log the actual structure
       console.log("U JSON structure:", uJson);
       console.log("V JSON structure:", vJson);
@@ -319,6 +317,11 @@
       const testLon = -114.0;
       const test = field.sample(testLat, testLon);
       console.log("TEST SAMPLE @ AB:", test);
+
+
+
+
+
       
       if (!test) {
         document.getElementById("info").textContent =
