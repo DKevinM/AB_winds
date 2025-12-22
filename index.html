@@ -5,24 +5,35 @@
   <title>Alberta Wind</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      overflow: hidden;
-      background: #000;
-    }
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: black;
+}
 
-    #display {
-      position: absolute;
-      inset: 0;
-    }
+#earth-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
 
-    canvas {
-      display: block;
-    }
-  </style>
+#globe {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#status {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  color: white;
+  font-family: sans-serif;
+}
+</style>
+
 
   <!-- REQUIRED LIBS (ORDER MATTERS) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js"></script>
@@ -38,10 +49,30 @@
 </head>
 
 <body>
-  <div id="display"></div>
-  <div id="status"></div>
-  <div id="status-line"></div>
-  <div id="location"></div>
+  <!-- REQUIRED ROOT -->
+  <div id="earth-container">
 
+    <!-- REQUIRED CANVAS -->
+    <canvas id="globe"></canvas>
+
+    <!-- REQUIRED STATUS BAR -->
+    <div id="status" class="status"></div>
+
+    <!-- REQUIRED CONTROLS -->
+    <div id="controls">
+      <div id="products"></div>
+      <div id="layers"></div>
+    </div>
+
+    <!-- REQUIRED LEGEND -->
+    <div id="legend"></div>
+
+  </div>
+
+  <!-- START EARTH -->
+  <script>
+    earth.init();
+  </script>
 </body>
+
 </html>
