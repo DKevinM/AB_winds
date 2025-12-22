@@ -229,6 +229,18 @@
 
       const [uJson, vJson] = await Promise.all([uRes.json(), vRes.json()]);
       const field = buildField(uJson, vJson);
+      
+      // DEBUG: probe center of Alberta
+      const testLat = 54.5;
+      const testLon = -114.0;
+      const test = field.sample(testLat, testLon);
+      console.log("TEST SAMPLE @ AB:", test);
+      
+      if (!test) {
+        document.getElementById("info").textContent =
+          "Wind loaded but grid sample is NULL (indexing issue)";
+      }
+
 
       info.textContent = "Wind loaded (particles running)";
       return field;
