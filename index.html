@@ -183,51 +183,105 @@
     }
 
     function buildField(uJson, vJson) {
-      console.log("AB TEST FIXED:", field.sample(54.5, -114.0));
-
-      const uh = readHeader(uJson);
-      const vh = readHeader(vJson);
-
-      // basic sanity
-      const nx = uh.nx, ny = uh.ny;
-      if (!nx || !ny) throw new Error("Header missing nx/ny. Update readHeader() to match your file.");
-
-      const u = uJson.data || uJson[0]?.data;
-      const v = vJson.data || vJson[0]?.data;
-      if (!u || !v) throw new Error("Missing data array in U/V JSON.");
-
-      const lon0 = uh.lo1, lat0 = uh.la1;
-      const dx = uh.dx, dy = uh.dy;
-
-      // assume grid is regular lat/lon and stored row-major (west->east, north->south or south->north)
-      // We'll handle both by checking dy sign.
-      const latStep = dy;
-      const lonStep = dx;
-
-      // Determine if first row is north or south by comparing la1 and dy sign
-      // If dy is negative, grid goes southward as index increases.
+      // First, identify your exact data structure
+      console.log("DEBUG: Full U object (first 3 entries):", 
+                  JSON.stringify(uJson).slice(0, 500));
+      
+      // Try different common ECCC structures
+      const uh = uJson.header || uJson.metadata || uJson;
+      const vh = vJson.header || vJson.metadata || vJson;
+      
+      console.log("Detected U header:", uh);
+      console.log("Detected V header:", vh);
+      
+      // Get dimensions - ECCC often uses these names
+      const nx = uh.nx || uh.Nx || uh.nlon || uh.Ni;
+      const ny = uh.ny || uh.Ny || uh.nlat || uh.Nj;
+      
+      // Get grid bounds - CRITICAL FOR ALBERTA
+      const lon0 = uh.lo1 || uh.longitudeOfFirstGridPoint || uh.lon0;
+      const lat0 = uh.la1 || uh.latitudeOfFirstGridPoint || uh.lat0;
+      const lon1 = uh.lo2 || uh.longitudeOfLastGridPoint;
+      const lat1 = uh.la2 || uh.latitudeOfLastGridPoint;
+      
+      const dx = uh.dx || uh.DxInDegrees || uh.dlon;
+      const dy = uh.dy || uh.DyInDegrees || uh.dlat;
+      
+      console.log(`Grid: ${nx}x${ny}, Origin: (${lon0}, ${lat0}), dx/dy: ${dx}/${dy}`);
+      
+      // Get data arrays - ECCC might store them differently
+      const uData = uJson.data || uJson.values || uJson.u || 
+                    (uJson.parameters && uJson.parameters[0]?.values);
+      const vData = vJson.data || vJson.values || vJson.v ||
+                    (vJson.parameters && vJson.parameters[0]?.values);
+      
+      if (!uData || !vData) {
+        console.error("Could not find wind data arrays. Available keys in U:", Object.keys(uJson));
+        throw new Error("Missing wind data arrays");
+      }
+      
+      // ALBERTA-SPECIFIC DEBUG: Test several Alberta locations
+      const testPoints = [
+        [54.5, -114.0],  // Center of Alberta
+        [53.5, -113.5],  // Edmonton
+        [51.0, -114.1],  // Calgary
+        [55.2, -118.8],  // Grande Prairie
+        [49.7, -112.8]   // Lethbridge
+      ];
+      
+      console.log("Testing Alberta grid coverage:");
+      testPoints.forEach(([lat, lon]) => {
+        const i = Math.floor((lon - lon0) / dx);
+        const j = Math.floor((lat - lat0) / dy);
+        const idx = j * nx + i;
+        console.log(`  ${lat}, ${lon}: i=${i}, j=${j}, idx=${idx}, 
+                     inBounds=${i>=0 && i<nx && j>=0 && j<ny}`);
+      });
+      
       return {
+        nx, ny, lon0, lat0, dx, dy, // Return for debugging
         sample: (lat, lon) => {
-        
-          // longitude index (west → east)
-          const i = Math.floor((lon - lon0) / lonStep);
-          if (i < 0 || i >= nx) return null;
-        
-          // latitude index (HRDPS = south → north)
-          const j = Math.floor((lat - lat0) / latStep);
-          if (j < 0 || j >= ny) return null;
-        
-          const idx = j * nx + i;
-        
-          const uu = u[idx];
-          const vv = v[idx];
-        
-          if (!Number.isFinite(uu) || !Number.isFinite(vv)) return null;
-        
+          // Convert lat/lon to grid indices
+          const i = Math.floor((lon - lon0) / dx);
+          const j = Math.floor((lat - lat0) / dy);
+          
+          // Check bounds
+          if (i < 0 || i >= nx || j < 0 || j >= ny) {
+            return null;
+          }
+          
+          // **CRITICAL**: ECCC data is often stored SOUTH-TO-NORTH
+          // If dy is positive but your data goes northward, need to flip j
+          let dataIndex;
+          
+          // Option 1: If grid goes northward (dy > 0)
+          if (dy > 0) {
+            dataIndex = j * nx + i;
+          } 
+          // Option 2: If grid goes southward (dy < 0)
+          else {
+            dataIndex = (ny - 1 - j) * nx + i;
+          }
+          
+          // For debugging
+          if (Math.abs(lat - 54.5) < 0.1 && Math.abs(lon + 114.0) < 0.1) {
+            console.log(`DEBUG Center AB: lat=${lat}, lon=${lon}, i=${i}, j=${j}, idx=${dataIndex}`);
+          }
+          
+          const uu = uData[dataIndex];
+          const vv = vData[dataIndex];
+          
+          if (uu === undefined || vv === undefined || 
+              uu === null || vv === null) {
+            return null;
+          }
+          
+          const speed = Math.sqrt(uu * uu + vv * vv);
+          
           return {
             u: uu,
             v: vv,
-            speed: Math.sqrt(uu * uu + vv * vv)
+            speed: speed
           };
         }
       };
@@ -243,6 +297,22 @@
 
       const [uJson, vJson] = await Promise.all([uRes.json(), vRes.json()]);
       field = buildField(uJson, vJson);
+
+        // DEBUG: Log the actual structure
+      console.log("U JSON structure:", uJson);
+      console.log("V JSON structure:", vJson);
+        // Check what keys exist in the header
+      if (uJson.header) {
+        console.log("U Header keys:", Object.keys(uJson.header));
+        console.log("U Header values:", uJson.header);
+      }
+
+      // Check data array length
+      const uData = uJson.data || uJson[0]?.data;
+      const vData = vJson.data || vJson[0]?.data;
+      console.log("U data length:", uData?.length);
+      console.log("V data length:", vData?.length);
+
       
       // DEBUG: probe center of Alberta
       const testLat = 54.5;
@@ -269,6 +339,48 @@
         document.getElementById("info").textContent = "ERROR: " + err.message;
         console.error(err);
       });
+
+    function runDiagnosticTest() {
+      console.log("=== DIAGNOSTIC TEST ===");
+      
+      // Test 1: Check if files exist
+      fetch(U_URL).then(r => {
+        console.log(`U file status: ${r.status} ${r.statusText}`);
+        return r.json();
+      }).then(data => {
+        console.log("U data type:", typeof data);
+        console.log("U keys:", Object.keys(data));
+        
+        if (data.header) {
+          console.log("Header exists with keys:", Object.keys(data.header));
+        }
+        
+        // Show first few data points
+        const dataArray = data.data || data.values || data.u;
+        if (dataArray && dataArray.length) {
+          console.log("First 5 U values:", dataArray.slice(0, 5));
+          console.log("Data length:", dataArray.length);
+        }
+      }).catch(err => console.error("U fetch error:", err));
+      
+      // Repeat for V
+      fetch(V_URL).then(r => {
+        console.log(`V file status: ${r.status} ${r.statusText}`);
+        return r.json();
+      }).then(data => {
+        console.log("V keys:", Object.keys(data));
+        const dataArray = data.data || data.values || data.v;
+        if (dataArray && dataArray.length) {
+          console.log("First 5 V values:", dataArray.slice(0, 5));
+        }
+      }).catch(err => console.error("V fetch error:", err));
+    }
+    
+    // Run after page loads
+    window.addEventListener('load', () => {
+      setTimeout(runDiagnosticTest, 1000);
+    });
+        
   </script>
 </body>
 </html>
