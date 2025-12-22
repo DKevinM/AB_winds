@@ -22,7 +22,8 @@
   <script src="https://unpkg.com/underscore@1.13.6/underscore-min.js"></script>
   <script src="https://unpkg.com/backbone@1.4.1/backbone-min.js"></script>
   <script src="https://unpkg.com/when@3.7.8/dist/browser/when.min.js"></script>
-  <script src="https://unpkg.com/topojson@1/topojson.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson@1.6.27/topojson.min.js"></script>
+
 
   <script>
     window.location.hash = "#wind/surface/level/current";
@@ -36,43 +37,43 @@
 
 <body data-lang="en">
 
-  <div id="status"></div>
-  <div id="progress"></div>
+<div id="status"></div>
+<div id="progress"></div>
 
-  <div id="display">
-    <svg id="map" class="fill-screen"></svg>
-    <svg id="foreground" class="fill-screen"></svg>
-    <canvas id="animation" class="fill-screen"></canvas>
-    <canvas id="overlay" class="fill-screen"></canvas>
-  </div>
+<div id="display">
+  <svg id="map" class="fill-screen"></svg>
+  <svg id="foreground" class="fill-screen"></svg>
+  <canvas id="animation" class="fill-screen"></canvas>
+  <canvas id="overlay" class="fill-screen"></canvas>
+</div>
 
-  <!-- must exist AND have a width -->
-  <div id="menu" style="position:absolute; right:0; top:0; width:300px; height:1px; opacity:0; pointer-events:none;">
-    <span id="scale-label"></span>
-    <canvas id="scale"></canvas>
-  </div>
+<!-- must exist AND have a width -->
+<div id="menu" style="position:absolute; width:300px; height:1px; opacity:0;">
+  <span id="scale-label"></span>
+  <canvas id="scale"></canvas>
+</div>
 
-  <span id="data-date"></span>
-  <span id="toggle-zone"></span>
-  <span id="data-layer"></span>
-  <span id="data-center"></span>
+<span id="data-date"></span>
+<span id="toggle-zone"></span>
+<span id="data-layer"></span>
+<span id="data-center"></span>
 
-  <div id="location-coord"></div>
-  <button id="location-close"></button>
-  <div id="location-wind"></div>
-  <div id="location-wind-units"></div>
-  <div id="location-value"></div>
-  <div id="location-value-units"></div>
+<div id="location-coord"></div>
+<button id="location-close"></button>
+<div id="location-wind"></div>
+<div id="location-wind-units"></div>
+<div id="location-value"></div>
+<div id="location-value-units"></div>
 
-  <button id="nav-backward-more"></button>
-  <button id="nav-backward"></button>
-  <button id="nav-forward"></button>
-  <button id="nav-forward-more"></button>
-  <button id="nav-now"></button>
+<button id="nav-backward-more"></button>
+<button id="nav-backward"></button>
+<button id="nav-forward"></button>
+<button id="nav-forward-more"></button>
+<button id="nav-now"></button>
 
-  <button id="wind-mode-enable"></button>
-  <button id="ocean-mode-enable"></button>
-  <button id="option-show-grid"></button>
+<button id="wind-mode-enable"></button>
+<button id="ocean-mode-enable"></button>
+<button id="option-show-grid"></button>
 
 </body>
 </html>
