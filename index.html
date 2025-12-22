@@ -4,75 +4,75 @@
   <meta charset="utf-8" />
   <title>Alberta Wind</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
 
-<style>
-html, body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  background: black;
-}
+  <style>
+    html, body { margin:0; padding:0; height:100%; background:black; overflow:hidden; }
+    #status {
+      position:absolute; bottom:10px; left:10px;
+      color:white; font-family:sans-serif; font-size:14px; z-index:9999;
+    }
+    #progress {
+      position:absolute; bottom:30px; left:10px;
+      color:white; font-family:monospace; font-size:12px; z-index:9999;
+    }
+  </style>
 
-#earth-container {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
-
-#globe {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-#status {
-  position: absolute;
-  bottom: 10px;
-  left: 10px;
-  color: white;
-  font-family: sans-serif;
-}
-</style>
-
-
-  <!-- REQUIRED LIBS (ORDER MATTERS) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.13.6/underscore-min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.4.1/backbone-min.js"></script>
+  <script src="https://unpkg.com/underscore@1.13.6/underscore-min.js"></script>
+  <script src="https://unpkg.com/backbone@1.4.1/backbone-min.js"></script>
   <script src="https://unpkg.com/when@3.7.8/dist/browser/when.min.js"></script>
+  <script src="https://unpkg.com/topojson@1/topojson.min.js"></script>
 
-  <!-- EARTH CORE -->
+  <script>
+    window.location.hash = "#wind/surface/level/current";
+  </script>
+
   <script src="src/micro.js"></script>
   <script src="src/products.js"></script>
   <script src="src/globes.js"></script>
   <script src="src/earth.js"></script>
 </head>
 
-<body>
-  <!-- REQUIRED ROOT -->
-  <div id="earth-container">
+<body data-lang="en">
 
-    <!-- REQUIRED CANVAS -->
-    <canvas id="globe"></canvas>
+  <div id="status"></div>
+  <div id="progress"></div>
 
-    <!-- REQUIRED STATUS BAR -->
-    <div id="status" class="status"></div>
-
-    <!-- REQUIRED CONTROLS -->
-    <div id="controls">
-      <div id="products"></div>
-      <div id="layers"></div>
-    </div>
-
-    <!-- REQUIRED LEGEND -->
-    <div id="legend"></div>
-
+  <div id="display">
+    <svg id="map" class="fill-screen"></svg>
+    <svg id="foreground" class="fill-screen"></svg>
+    <canvas id="animation" class="fill-screen"></canvas>
+    <canvas id="overlay" class="fill-screen"></canvas>
   </div>
 
-  <!-- START EARTH -->
-  <script>
-    earth.init();
-  </script>
-</body>
+  <!-- must exist AND have a width -->
+  <div id="menu" style="position:absolute; right:0; top:0; width:300px; height:1px; opacity:0; pointer-events:none;">
+    <span id="scale-label"></span>
+    <canvas id="scale"></canvas>
+  </div>
 
+  <span id="data-date"></span>
+  <span id="toggle-zone"></span>
+  <span id="data-layer"></span>
+  <span id="data-center"></span>
+
+  <div id="location-coord"></div>
+  <button id="location-close"></button>
+  <div id="location-wind"></div>
+  <div id="location-wind-units"></div>
+  <div id="location-value"></div>
+  <div id="location-value-units"></div>
+
+  <button id="nav-backward-more"></button>
+  <button id="nav-backward"></button>
+  <button id="nav-forward"></button>
+  <button id="nav-forward-more"></button>
+  <button id="nav-now"></button>
+
+  <button id="wind-mode-enable"></button>
+  <button id="ocean-mode-enable"></button>
+  <button id="option-show-grid"></button>
+
+</body>
 </html>
