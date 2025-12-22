@@ -37,7 +37,11 @@
   <div class="info" id="info">Loading wind…</div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+
+
   <script>
+    let field = null;
     // ---------- CONFIG YOU MAY NEED TO EDIT ----------
     // These MUST match whatever your ab_wind_json.py writes into the header.
     // If your JSON header names differ, adjust readHeader() below.
@@ -238,7 +242,7 @@
       if (!vRes.ok) throw new Error(`V fetch failed: ${vRes.status}`);
 
       const [uJson, vJson] = await Promise.all([uRes.json(), vRes.json()]);
-      const field = buildField(uJson, vJson);
+      field = buildField(uJson, vJson);
       
       // DEBUG: probe center of Alberta
       const testLat = 54.5;
