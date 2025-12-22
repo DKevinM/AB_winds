@@ -40,7 +40,9 @@ jobs:
           ls -la
           echo "=== list data ==="
           ls -la data || true
-          test -f data/AB_wind_latest.json
+          test -f data/AB_u_latest.json
+          test -f data/AB_v_latest.json
+
 
       - name: Commit and push (if changed)
         run: |
