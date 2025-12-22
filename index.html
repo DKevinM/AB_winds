@@ -1,80 +1,248 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Alberta Wind</title>
+  <title>AB Wind (Leaflet)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="style.css" />
+
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
 
   <style>
-    html, body { margin:0; padding:0; height:100%; background:black; overflow:hidden; }
-    #status {
-      position:absolute; bottom:10px; left:10px;
-      color:white; font-family:sans-serif; font-size:14px; z-index:9999;
+    html, body { height: 100%; margin: 0; }
+    #map { height: 100%; width: 100%; }
+    .info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 999;
+      background: rgba(0,0,0,0.7);
+      color: #fff;
+      font: 14px/1.3 Arial, sans-serif;
+      padding: 8px 10px;
+      border-radius: 6px;
+      max-width: 360px;
     }
-    #progress {
-      position:absolute; bottom:30px; left:10px;
-      color:white; font-family:monospace; font-size:12px; z-index:9999;
+    canvas.wind {
+      position: absolute;
+      inset: 0;
+      pointer-events: none; /* don’t block map interaction */
     }
   </style>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js"></script>
-  <script src="https://unpkg.com/underscore@1.13.6/underscore-min.js"></script>
-  <script src="https://unpkg.com/backbone@1.4.1/backbone-min.js"></script>
-  <script src="https://unpkg.com/when@3.7.8/dist/browser/when.min.js"></script>
-
-  <script src="src/topojson.min.js"></script>
-
-
-  <script>
-    window.location.hash = "#wind/surface/level/current";
-  </script>
-
-  <script src="src/micro.js"></script>
-  <script src="src/products.js"></script>
-  <script src="src/globes.js"></script>
-  <script src="src/earth.js"></script>
 </head>
+<body>
+  <div id="map"></div>
+  <div class="info" id="info">Loading wind…</div>
 
-<body data-lang="en">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // ---------- CONFIG YOU MAY NEED TO EDIT ----------
+    // These MUST match whatever your ab_wind_json.py writes into the header.
+    // If your JSON header names differ, adjust readHeader() below.
+    const U_URL = "data/AB_u_000.json";
+    const V_URL = "data/AB_v_000.json";
 
-<div id="status"></div>
-<div id="progress"></div>
+    // If your grid is Alberta-only, set a reasonable start view:
+    const map = L.map("map", { zoomControl: true }).setView([54.5, -114.0], 6);
 
-<div id="display">
-  <svg id="map" class="fill-screen"></svg>
-  <svg id="foreground" class="fill-screen"></svg>
-  <canvas id="animation" class="fill-screen"></canvas>
-  <canvas id="overlay" class="fill-screen"></canvas>
-</div>
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 12,
+      attribution: "&copy; OpenStreetMap"
+    }).addTo(map);
 
-<!-- must exist AND have a width -->
-<div id="menu" style="position:absolute; width:300px; height:1px; opacity:0;">
-  <span id="scale-label"></span>
-  <canvas id="scale"></canvas>
-</div>
+    // ---------- Minimal wind particle canvas layer ----------
+    const WindLayer = L.Layer.extend({
+      onAdd: function(map) {
+        this._map = map;
+        this._canvas = L.DomUtil.create("canvas", "wind");
+        this._canvas.classList.add("wind");
+        this._ctx = this._canvas.getContext("2d");
+        map.getPanes().overlayPane.appendChild(this._canvas);
 
-<span id="data-date"></span>
-<span id="toggle-zone"></span>
-<span id="data-layer"></span>
-<span id="data-center"></span>
+        map.on("move zoom resize", this._reset, this);
+        this._reset();
+      },
+      onRemove: function(map) {
+        map.off("move zoom resize", this._reset, this);
+        this._canvas.remove();
+      },
+      setField: function(field) {
+        this._field = field;
+        this._initParticles();
+        this._start();
+      },
+      _reset: function() {
+        const size = this._map.getSize();
+        this._canvas.width = size.x;
+        this._canvas.height = size.y;
+      },
+      _initParticles: function() {
+        const count = Math.round(this._map.getSize().x * 0.8); // adjust density
+        this._particles = Array.from({ length: count }, () => this._randomParticle());
+      },
+      _randomParticle: function() {
+        // pick random screen point until we land inside the grid
+        for (let k = 0; k < 30; k++) {
+          const x = Math.random() * this._canvas.width;
+          const y = Math.random() * this._canvas.height;
+          const ll = this._map.containerPointToLatLng([x, y]);
+          const v = this._field.sample(ll.lat, ll.lng);
+          if (v) return { x, y, age: Math.random() * 80 };
+        }
+        return { x: Math.random()*this._canvas.width, y: Math.random()*this._canvas.height, age: 0 };
+      },
+      _start: function() {
+        if (this._anim) cancelAnimationFrame(this._anim);
+        const frame = () => {
+          this._step();
+          this._anim = requestAnimationFrame(frame);
+        };
+        frame();
+      },
+      _step: function() {
+        if (!this._field) return;
+        const ctx = this._ctx;
 
-<div id="location-coord"></div>
-<button id="location-close"></button>
-<div id="location-wind"></div>
-<div id="location-wind-units"></div>
-<div id="location-value"></div>
-<div id="location-value-units"></div>
+        // fade trails
+        ctx.globalCompositeOperation = "source-over";
+        ctx.fillStyle = "rgba(0,0,0,0.06)";
+        ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
 
-<button id="nav-backward-more"></button>
-<button id="nav-backward"></button>
-<button id="nav-forward"></button>
-<button id="nav-forward-more"></button>
-<button id="nav-now"></button>
+        ctx.globalCompositeOperation = "lighter";
+        ctx.lineWidth = 1;
 
-<button id="wind-mode-enable"></button>
-<button id="ocean-mode-enable"></button>
-<button id="option-show-grid"></button>
+        for (const p of this._particles) {
+          if (p.age++ > 80) {
+            Object.assign(p, this._randomParticle());
+            continue;
+          }
 
+          const ll = this._map.containerPointToLatLng([p.x, p.y]);
+          const v = this._field.sample(ll.lat, ll.lng);
+          if (!v) {
+            Object.assign(p, this._randomParticle());
+            continue;
+          }
+
+          // v = {u, v, speed}
+          const speed = v.speed; // m/s
+          const step = Math.min(3.0, speed * 0.35); // tune feel
+
+          // convert wind direction in lat/lng to screen dx/dy approximately:
+          // move a tiny amount in lat/lng, project, and compute delta pixels
+          const dLat = (v.v / 111320) * 0.08; // rough deg per m (scaled)
+          const dLng = (v.u / (111320 * Math.cos(ll.lat * Math.PI/180))) * 0.08;
+
+          const p1 = this._map.latLngToContainerPoint([ll.lat, ll.lng]);
+          const p2 = this._map.latLngToContainerPoint([ll.lat + dLat, ll.lng + dLng]);
+
+          const dx = (p2.x - p1.x) * step;
+          const dy = (p2.y - p1.y) * step;
+
+          const x2 = p.x + dx;
+          const y2 = p.y + dy;
+
+          // color by speed
+          const c = Math.min(255, Math.round(speed * 10));
+          ctx.strokeStyle = `rgba(${c}, ${255-c}, 255, 0.85)`;
+
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+
+          p.x = x2;
+          p.y = y2;
+
+          // recycle if offscreen
+          if (p.x < 0 || p.y < 0 || p.x > this._canvas.width || p.y > this._canvas.height) {
+            Object.assign(p, this._randomParticle());
+          }
+        }
+      }
+    });
+
+    // ---------- Parse your JSONs into a sampler ----------
+    function readHeader(json) {
+      // Try common variants. Adjust once we see your actual header keys.
+      const h = json.header || json[0]?.header || json;
+      return {
+        lo1: h.lo1 ?? h.lon0 ?? h.lo ?? h.lo1,
+        la1: h.la1 ?? h.lat0 ?? h.la ?? h.la1,
+        dx:  h.dx  ?? h.dlon ?? h.dx,
+        dy:  h.dy  ?? h.dlat ?? h.dy,
+        nx:  h.nx  ?? h.Nx   ?? h.nx,
+        ny:  h.ny  ?? h.Ny   ?? h.ny,
+      };
+    }
+
+    function buildField(uJson, vJson) {
+      const uh = readHeader(uJson);
+      const vh = readHeader(vJson);
+
+      // basic sanity
+      const nx = uh.nx, ny = uh.ny;
+      if (!nx || !ny) throw new Error("Header missing nx/ny. Update readHeader() to match your file.");
+
+      const u = uJson.data || uJson[0]?.data;
+      const v = vJson.data || vJson[0]?.data;
+      if (!u || !v) throw new Error("Missing data array in U/V JSON.");
+
+      const lon0 = uh.lo1, lat0 = uh.la1;
+      const dx = uh.dx, dy = uh.dy;
+
+      // assume grid is regular lat/lon and stored row-major (west->east, north->south or south->north)
+      // We'll handle both by checking dy sign.
+      const latStep = dy;
+      const lonStep = dx;
+
+      // Determine if first row is north or south by comparing la1 and dy sign
+      // If dy is negative, grid goes southward as index increases.
+      return {
+        sample: (lat, lon) => {
+          // map lon into same range if needed
+          const i = Math.floor((lon - lon0) / lonStep);
+          const j = Math.floor((lat - lat0) / latStep);
+
+          if (i < 0 || j < 0 || i >= nx || j >= ny) return null;
+          const idx = j * nx + i;
+
+          const uu = u[idx];
+          const vv = v[idx];
+          if (!isFinite(uu) || !isFinite(vv)) return null;
+
+          const speed = Math.sqrt(uu*uu + vv*vv);
+          return { u: uu, v: vv, speed };
+        }
+      };
+    }
+
+    async function loadWind() {
+      const info = document.getElementById("info");
+      info.textContent = "Loading wind JSON…";
+
+      const [uRes, vRes] = await Promise.all([fetch(U_URL), fetch(V_URL)]);
+      if (!uRes.ok) throw new Error(`U fetch failed: ${uRes.status}`);
+      if (!vRes.ok) throw new Error(`V fetch failed: ${vRes.status}`);
+
+      const [uJson, vJson] = await Promise.all([uRes.json(), vRes.json()]);
+      const field = buildField(uJson, vJson);
+
+      info.textContent = "Wind loaded (particles running)";
+      return field;
+    }
+
+    const windLayer = new WindLayer();
+    windLayer.addTo(map);
+
+    loadWind()
+      .then(field => windLayer.setField(field))
+      .catch(err => {
+        document.getElementById("info").textContent = "ERROR: " + err.message;
+        console.error(err);
+      });
+  </script>
 </body>
 </html>
