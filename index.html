@@ -81,22 +81,38 @@
         const size = this._map.getSize();
         this._canvas.width = size.x;
         this._canvas.height = size.y;
-      },
-      _initParticles: function() {
-        const count = Math.round(this._map.getSize().x * 0.8); // adjust density
-        this._particles = Array.from({ length: count }, () => this._randomParticle());
+        if (this._field) this._initParticles();
       },
       _randomParticle: function() {
-        // pick random screen point until we land inside the grid
-        for (let k = 0; k < 30; k++) {
-          const x = Math.random() * this._canvas.width;
-          const y = Math.random() * this._canvas.height;
-          const ll = this._map.containerPointToLatLng([x, y]);
-          const v = this._field.sample(ll.lat, ll.lng);
-          if (v) return { x, y, age: Math.random() * 80 };
-        }
-        return { x: Math.random()*this._canvas.width, y: Math.random()*this._canvas.height, age: 0 };
-      },
+        const f = this._field;
+        if (!f) return { x: this._canvas.width/2, y: this._canvas.height/2, age: 0 };
+      
+        // Wind grid bounds (your grid goes SOUTH from lat0)
+        const lonMin = f.lon0;
+        const lonMax = f.lon0 + f.dx * (f.nx - 1);
+        const latMax = f.lat0;
+        const latMin = f.lat0 - f.dy * (f.ny - 1);
+      
+        // Pick random lat/lon INSIDE the grid, then project to screen
+        for (let k = 0; k < 60; k++) {
+          const lat = latMin + Math.random() * (latMax - latMin);
+          const lon = lonMin + Math.random() * (lonMax - lonMin);
+      
+          const v = f.sample(lat, lon);
+          if (!v) continue;
+      
+          const pt = this._map.latLngToContainerPoint([lat, lon]);
+        
+            // Keep only if it appears on the visible canvas
+            if (pt.x >= 0 && pt.y >= 0 && pt.x <= this._canvas.width && pt.y <= this._canvas.height) {
+              return { x: pt.x, y: pt.y, age: Math.random() * 200 };
+            }
+          }
+        
+          // Fallback
+          return { x: this._canvas.width/2, y: this._canvas.height/2, age: 0 };
+        },
+      
       _start: function() {
         if (this._anim) cancelAnimationFrame(this._anim);
         const frame = () => {
@@ -111,11 +127,11 @@
 
         // fade trails
         ctx.globalCompositeOperation = "source-over";
-        ctx.fillStyle = "rgba(0,0,0,0.02)";
+        ctx.fillStyle = "rgba(0,0,0,0.01)";
         ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
 
         ctx.globalCompositeOperation = "lighter";
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1.2;
 
         for (const p of this._particles) {
           if (p.age++ > 200) {
@@ -283,7 +299,8 @@
       const [uJson, vJson] = await Promise.all([uRes.json(), vRes.json()]);
       field = buildField(uJson, vJson);
 
-  
+
+      
       // NEW: Test a grid of points to see coverage
       console.log("=== DATA COVERAGE TEST ===");
       const testLats = [60, 58, 56, 54, 52, 50];  // From north to south
@@ -326,25 +343,19 @@
       };
       
       window.stepParticle = function () {
-        const wind = field.sample(testParticle.lat, testParticle.lon);
-        if (!wind) {
-          console.log("No wind at particle location");
-          return;
-        }
+        const p = window.testParticle;
+        const wind = field.sample(p.lat, p.lon);
+        if (!wind) { console.log("No wind"); return; }
       
-        const dt = 120; // seconds
-      
+        const dt = 120;
         const metersPerDegLat = 111320;
-        const metersPerDegLon = 111320 * Math.cos(testParticle.lat * Math.PI/180);
+        const metersPerDegLon = 111320 * Math.cos(p.lat * Math.PI/180);
       
-        testParticle.lon += (wind.u * dt) / metersPerDegLon;
-        testParticle.lat += (wind.v * dt) / metersPerDegLat;
+        p.lon += (wind.u * dt) / metersPerDegLon;
+        p.lat += (wind.v * dt) / metersPerDegLat;
       
-        console.log("Particle moved to:", testParticle.lat.toFixed(5), testParticle.lon.toFixed(5));
-      }
-
-      
-
+        console.log("Particle moved to:", p.lat.toFixed(5), p.lon.toFixed(5));
+      };
       
       if (!test) {
         document.getElementById("info").textContent =
