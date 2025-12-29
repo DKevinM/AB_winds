@@ -111,14 +111,14 @@
 
         // fade trails
         ctx.globalCompositeOperation = "source-over";
-        ctx.fillStyle = "rgba(0,0,0,0.06)";
+        ctx.fillStyle = "rgba(0,0,0,0.02)";
         ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
 
         ctx.globalCompositeOperation = "lighter";
         ctx.lineWidth = 1;
 
         for (const p of this._particles) {
-          if (p.age++ > 80) {
+          if (p.age++ > 200) {
             Object.assign(p, this._randomParticle());
             continue;
           }
@@ -132,7 +132,7 @@
 
           // v = {u, v, speed}
           const speed = v.speed; // m/s
-          const step = Math.min(3.0, speed * 0.35); // tune feel
+          const step = Math.min(1.0, speed * 0.15); // tune feel
 
           // convert wind direction in lat/lng to screen dx/dy approximately:
           // move a tiny amount in lat/lng, project, and compute delta pixels
