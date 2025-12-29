@@ -327,7 +327,7 @@
       };
       
       function stepParticle() {
-        const wind = sampleUVBilinear(uJson, vJson, testParticle.lat, testParticle.lon);
+        const wind = field.sample(testParticle.lat, testParticle.lon);
         if (!wind) {
           console.log("No wind at particle location");
           return;
