@@ -320,13 +320,12 @@
 
 
 
-
-      let testParticle = {
+      window.testParticle = {
         lat: 54.5,
         lon: -114.0
       };
       
-      function stepParticle() {
+      window.stepParticle = function () {
         const wind = field.sample(testParticle.lat, testParticle.lon);
         if (!wind) {
           console.log("No wind at particle location");
