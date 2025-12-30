@@ -27,8 +27,9 @@
     }
     canvas.wind {
       position: absolute;
-      inset: 0;
-      pointer-events: none; /* don’t block map interaction */
+      top: 0;
+      left: 0;
+      pointer-events: none;
     }
   </style>
 </head>
@@ -70,6 +71,14 @@
         map.on("move zoom resize", this._reset, this);
         this._reset();
       },
+
+      _onZoomStart: function() {
+        if (!this._ctx) return;
+        this._ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
+      
+        // Optional but recommended: reseed so you don't get "stuck" particles
+        if (this._field) this._initParticles();
+      },
     
       onRemove: function(map) {
         map.off("move zoom resize", this._reset, this);
@@ -90,10 +99,18 @@
     
       _reset: function() {
         const size = this._map.getSize();
+      
+        // Anchor canvas to the map's top-left in layer coordinates
+        const topLeft = this._map.containerPointToLayerPoint([0, 0]);
+        L.DomUtil.setPosition(this._canvas, topLeft);
+      
+        // Resize canvas to match map viewport
         this._canvas.width = size.x;
         this._canvas.height = size.y;
-    
-        // After zoom/move, reseed so particles are on-screen + inside grid
+      
+        // Clear after resize (resize already clears, but keep explicit)
+        this._ctx.clearRect(0, 0, size.x, size.y);
+      
         if (this._field) this._initParticles();
       },
     
