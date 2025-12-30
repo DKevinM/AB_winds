@@ -112,8 +112,40 @@
         this._ctx.clearRect(0, 0, size.x, size.y);
       
         if (this._field) this._initParticles();
+        this._updateMaskPath();
       },
-    
+
+      setMask: function(geojson) {
+        this._maskGeoJSON = geojson;
+        this._updateMaskPath();
+      },
+      
+      _updateMaskPath: function() {
+        if (!this._maskGeoJSON) return;
+      
+        const path = new Path2D();
+      
+        const addRing = (ring) => {
+          ring.forEach(([lon, lat], i) => {
+            const p = this._map.latLngToContainerPoint([lat, lon]);
+            if (i === 0) path.moveTo(p.x, p.y);
+            else path.lineTo(p.x, p.y);
+          });
+          path.closePath();
+        };
+      
+        const geom = this._maskGeoJSON.features[0].geometry;
+      
+        if (geom.type === "Polygon") {
+          geom.coordinates.forEach(addRing);
+        } else if (geom.type === "MultiPolygon") {
+          geom.coordinates.forEach(poly => poly.forEach(addRing));
+        }
+      
+        this._maskPath = path;
+      },
+
+      
       _initParticles: function() {
         const count = Math.round(this._map.getSize().x * 0.6);
         this._particles = Array.from({ length: count }, () => this._randomParticle());
@@ -158,6 +190,9 @@
         if (!this._field || !this._particles) return;
     
         const ctx = this._ctx;
+        ctx.save();
+        if (this._maskPath) ctx.clip(this._maskPath);
+
     
         // fade existing pixels by reducing alpha (keeps transparency)
         ctx.globalCompositeOperation = "destination-in";
@@ -228,6 +263,7 @@
             Object.assign(p, this._randomParticle());
           }
         }
+        ctx.restore();
       }
     });
 
@@ -381,6 +417,11 @@
 
     const windLayer = new WindLayer();
     windLayer.addTo(map);
+
+    fetch("data/Alberta.geojson")
+      .then(r => r.json())
+      .then(gj => windLayer.setMask(gj));
+    
 
     loadWind()
       .then(field => windLayer.setField(field))
