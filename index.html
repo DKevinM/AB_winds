@@ -82,6 +82,11 @@
         this._initParticles();
         this._start();
       },
+      
+      updateField: function(field) {
+        this._field = field;
+      },
+      
     
       _reset: function() {
         const size = this._map.getSize();
@@ -313,107 +318,48 @@
     async function loadWind() {
       const info = document.getElementById("info");
       info.textContent = "Loading wind JSON…";
-
+    
       const uJsons = await Promise.all(U_URLS.map(u => fetch(u).then(r => r.json())));
       const vJsons = await Promise.all(V_URLS.map(v => fetch(v).then(r => r.json())));
-      
+    
       let activeField = buildField(uJsons[0], vJsons[0]);
-
-      
-      // NEW: Test a grid of points to see coverage
-      console.log("=== DATA COVERAGE TEST ===");
-      const testLats = [60, 58, 56, 54, 52, 50];  // From north to south
-      const testLons = [-125, -120, -115, -110];  // West to east
-      
-      for (const lat of testLats) {
-        for (const lon of testLons) {
-          const result = field.sample(lat, lon);
-          console.log(`(${lat}, ${lon}): ${result ? `U=${result.u.toFixed(2)}, V=${result.v.toFixed(2)}` : 'NO DATA'}`);
-        }
-      }
-      
-        // DEBUG: Log the actual structure
-      console.log("U JSON structure:", uJson);
-      console.log("V JSON structure:", vJson);
-        // Check what keys exist in the header
-      if (uJson.header) {
-        console.log("U Header keys:", Object.keys(uJson.header));
-        console.log("U Header values:", uJson.header);
-      }
-
-      // Check data array length
-      const uData = uJson.data || uJson[0]?.data;
-      const vData = vJson.data || vJson[0]?.data;
-      console.log("U data length:", uData?.length);
-      console.log("V data length:", vData?.length);
-
-      
-      // DEBUG: probe center of Alberta
-      const testLat = 54.5;
-      const testLon = -114.0;
-      const test = field.sample(testLat, testLon);
+      field = activeField;
+    
+      // Quick sanity probe
+      const test = activeField.sample(54.5, -114.0);
       console.log("TEST SAMPLE @ AB:", test);
-
-
-
-      window.testParticle = {
-        lat: 54.5,
-        lon: -114.0
-      };
-      
-      window.stepParticle = function () {
-        const p = window.testParticle;
-        const wind = field.sample(p.lat, p.lon);
-        if (!wind) { console.log("No wind"); return; }
-      
-        const dt = 120;
-        const metersPerDegLat = 111320;
-        const metersPerDegLon = 111320 * Math.cos(p.lat * Math.PI/180);
-      
-        p.lon += (wind.u * dt) / metersPerDegLon;
-        p.lat += (wind.v * dt) / metersPerDegLat;
-      
-        console.log("Particle moved to:", p.lat.toFixed(5), p.lon.toFixed(5));
-      };
-      
-      if (!test) {
-        document.getElementById("info").textContent =
-          "Wind loaded but grid sample is NULL (indexing issue)";
-      }
-
-
+    
+      // Animate forecast blending
       let t = 0;
       setInterval(() => {
         const i = Math.floor(t) % uJsons.length;
         const j = (i + 1) % uJsons.length;
         const a = t - Math.floor(t);
-      
+    
         const f1 = buildField(uJsons[i], vJsons[i]);
         const f2 = buildField(uJsons[j], vJsons[j]);
-      
-        // blend fields
+    
         activeField = {
           ...f1,
           sample: (lat, lon) => {
             const w1 = f1.sample(lat, lon);
             const w2 = f2.sample(lat, lon);
             if (!w1 || !w2) return null;
-      
-            const u = (1-a)*w1.u + a*w2.u;
-            const v = (1-a)*w1.v + a*w2.v;
-            return { u, v, speed: Math.sqrt(u*u + v*v) };
+    
+            const u = (1 - a) * w1.u + a * w2.u;
+            const v = (1 - a) * w1.v + a * w2.v;
+            return { u, v, speed: Math.sqrt(u * u + v * v) };
           }
         };
-      
-        windLayer.setField(activeField);
-        t += 0.02;   // controls animation time speed
+    
+        windLayer.updateField(activeField);
+        t += 0.02;
       }, 1000);
-
-
-      
+    
       info.textContent = "Wind loaded (particles running)";
       return field;
     }
+
 
     const windLayer = new WindLayer();
     windLayer.addTo(map);
@@ -429,34 +375,23 @@
       console.log("=== DIAGNOSTIC TEST ===");
       
       // Test 1: Check if files exist
-      fetch(U_URL).then(r => {
-        console.log(`U file status: ${r.status} ${r.statusText}`);
+      fetch(U_URLS[0]).then(r => {
         return r.json();
       }).then(data => {
-        console.log("U data type:", typeof data);
-        console.log("U keys:", Object.keys(data));
         
-        if (data.header) {
-          console.log("Header exists with keys:", Object.keys(data.header));
-        }
         
         // Show first few data points
         const dataArray = data.data || data.values || data.u;
         if (dataArray && dataArray.length) {
-          console.log("First 5 U values:", dataArray.slice(0, 5));
-          console.log("Data length:", dataArray.length);
         }
       }).catch(err => console.error("U fetch error:", err));
       
       // Repeat for V
-      fetch(V_URL).then(r => {
-        console.log(`V file status: ${r.status} ${r.statusText}`);
+      fetch(V_URLS[0]).then(r => {
         return r.json();
       }).then(data => {
-        console.log("V keys:", Object.keys(data));
         const dataArray = data.data || data.values || data.v;
         if (dataArray && dataArray.length) {
-          console.log("First 5 V values:", dataArray.slice(0, 5));
         }
       }).catch(err => console.error("V fetch error:", err));
     }
