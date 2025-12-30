@@ -45,8 +45,10 @@
     // ---------- CONFIG YOU MAY NEED TO EDIT ----------
     // These MUST match whatever your ab_wind_json.py writes into the header.
     // If your JSON header names differ, adjust readHeader() below.
-    const U_URL = "data/AB_u_000.json";
-    const V_URL = "data/AB_v_000.json";
+    const HOURS = [0,1,2,3];
+    const U_URLS = HOURS.map(h => `data/AB_u_00${h}.json`);
+    const V_URLS = HOURS.map(h => `data/AB_v_00${h}.json`);
+
 
     // If your grid is Alberta-only, set a reasonable start view:
     const map = L.map("map", { zoomControl: true }).setView([54.5, -114.0], 6);
@@ -262,38 +264,35 @@
       return {
         nx, ny, lon0, lat0, dx, dy,
         sample: (lat, lon) => {
-          // Calculate grid indices
-          // lon index: works fine
-          const i = Math.floor((lon - lon0) / dx);
+
+          // Fractional grid position
+          const fx = (lon - lon0) / dx;
+          const fy = (lat0 - lat) / dy;
           
-          // lat index: CRITICAL - your grid goes SOUTHWARD from northern point
-          // lat0 = 60.64 (north), dy = +0.0227 (southward)
-          // So: lat = lat0 - (j * dy)
-          // Therefore: j = (lat0 - lat) / dy
-          const j = Math.floor((lat0 - lat) / dy);
+          const i0 = Math.floor(fx);
+          const j0 = Math.floor(fy);
+          const i1 = i0 + 1;
+          const j1 = j0 + 1;
           
-          // Check bounds
-          if (i < 0 || i >= nx || j < 0 || j >= ny) {
-            // For debugging: show what's wrong
-            if (Math.abs(lat - 54.5) < 0.5 && Math.abs(lon + 114) < 1) {
-              console.log(`Out of bounds: lat=${lat}, lon=${lon}, i=${i}, j=${j}, 
-                          bounds: i[0-${nx-1}], j[0-${ny-1}]`);
-            }
-            return null;
-          }
+          if (i0 < 0 || i1 >= nx || j0 < 0 || j1 >= ny) return null;
           
-          // Calculate data index (row-major: j rows down, i columns across)
-          const dataIndex = j * nx + i;
+          const tx = fx - i0;
+          const ty = fy - j0;
           
-          // Debug for Alberta center
-          if (Math.abs(lat - 54.5) < 0.1 && Math.abs(lon + 114.0) < 0.1) {
-            console.log(`Alberta center: lat=${lat}, lon=${lon}, i=${i}, j=${j}, idx=${dataIndex}`);
-            console.log(`  U[${dataIndex}]=${uData[dataIndex]}, V[${dataIndex}]=${vData[dataIndex]}`);
-          }
+          const idx00 = j0 * nx + i0;
+          const idx10 = j0 * nx + i1;
+          const idx01 = j1 * nx + i0;
+          const idx11 = j1 * nx + i1;
           
-          const uu = uData[dataIndex];
-          const vv = vData[dataIndex];
+          const u00 = uData[idx00], u10 = uData[idx10], u01 = uData[idx01], u11 = uData[idx11];
+          const v00 = vData[idx00], v10 = vData[idx10], v01 = vData[idx01], v11 = vData[idx11];
           
+          if ([u00,u10,u01,u11,v00,v10,v01,v11].some(v => v == null)) return null;
+          
+          // Bilinear interpolation
+          const uu = (1-tx)*(1-ty)*u00 + tx*(1-ty)*u10 + (1-tx)*ty*u01 + tx*ty*u11;
+          const vv = (1-tx)*(1-ty)*v00 + tx*(1-ty)*v10 + (1-tx)*ty*v01 + tx*ty*v11;
+
           // Handle null/missing data
           if (uu === null || vv === null || 
               uu === undefined || vv === undefined) {
@@ -315,13 +314,10 @@
       const info = document.getElementById("info");
       info.textContent = "Loading wind JSON…";
 
-      const [uRes, vRes] = await Promise.all([fetch(U_URL), fetch(V_URL)]);
-      if (!uRes.ok) throw new Error(`U fetch failed: ${uRes.status}`);
-      if (!vRes.ok) throw new Error(`V fetch failed: ${vRes.status}`);
-
-      const [uJson, vJson] = await Promise.all([uRes.json(), vRes.json()]);
-      field = buildField(uJson, vJson);
-
+      const uJsons = await Promise.all(U_URLS.map(u => fetch(u).then(r => r.json())));
+      const vJsons = await Promise.all(V_URLS.map(v => fetch(v).then(r => r.json())));
+      
+      let activeField = buildField(uJsons[0], vJsons[0]);
 
       
       // NEW: Test a grid of points to see coverage
@@ -386,6 +382,35 @@
       }
 
 
+      let t = 0;
+      setInterval(() => {
+        const i = Math.floor(t) % uJsons.length;
+        const j = (i + 1) % uJsons.length;
+        const a = t - Math.floor(t);
+      
+        const f1 = buildField(uJsons[i], vJsons[i]);
+        const f2 = buildField(uJsons[j], vJsons[j]);
+      
+        // blend fields
+        activeField = {
+          ...f1,
+          sample: (lat, lon) => {
+            const w1 = f1.sample(lat, lon);
+            const w2 = f2.sample(lat, lon);
+            if (!w1 || !w2) return null;
+      
+            const u = (1-a)*w1.u + a*w2.u;
+            const v = (1-a)*w1.v + a*w2.v;
+            return { u, v, speed: Math.sqrt(u*u + v*v) };
+          }
+        };
+      
+        windLayer.setField(activeField);
+        t += 0.02;   // controls animation time speed
+      }, 1000);
+
+
+      
       info.textContent = "Wind loaded (particles running)";
       return field;
     }
