@@ -115,7 +115,7 @@
       },
     
       _initParticles: function() {
-        const count = Math.round(this._map.getSize().x * 1.5);
+        const count = Math.round(this._map.getSize().x * 0.6);
         this._particles = Array.from({ length: count }, () => this._randomParticle());
       },
     
@@ -159,13 +159,14 @@
     
         const ctx = this._ctx;
     
-        // Trails (smaller alpha = longer tails)
+        // fade existing pixels by reducing alpha (keeps transparency)
+        ctx.globalCompositeOperation = "destination-in";
+        ctx.fillStyle = "rgba(0,0,0,0.92)";  // higher = shorter tails; try 0.85–0.95
+        ctx.fillRect(0,0,this._canvas.width,this._canvas.height);
+        
+        // draw new strokes normally
         ctx.globalCompositeOperation = "source-over";
-        ctx.fillStyle = "rgba(0,0,0,0.01)";
-        ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
-    
-        ctx.globalCompositeOperation = "lighter";
-        ctx.lineWidth = 1.2;
+        ctx.lineWidth = 0.9;
     
         for (const p of this._particles) {
           if (p.age++ > 200) {
@@ -213,7 +214,7 @@
           
     
           const c = Math.min(255, Math.round(speed * 10));
-          ctx.strokeStyle = `rgba(${c}, ${255 - c}, 255, 0.85)`;
+          ctx.strokeStyle = `rgba(${c}, ${255 - c}, 255, 0.35)`;
     
           ctx.beginPath();
           ctx.moveTo(p.x, p.y);
