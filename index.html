@@ -64,125 +64,131 @@
         this._canvas.classList.add("wind");
         this._ctx = this._canvas.getContext("2d");
         map.getPanes().overlayPane.appendChild(this._canvas);
-
+    
         map.on("move zoom resize", this._reset, this);
         this._reset();
       },
+    
       onRemove: function(map) {
         map.off("move zoom resize", this._reset, this);
+        if (this._anim) cancelAnimationFrame(this._anim);
         this._canvas.remove();
       },
+    
       setField: function(field) {
         this._field = field;
         this._initParticles();
         this._start();
       },
+    
       _reset: function() {
         const size = this._map.getSize();
         this._canvas.width = size.x;
         this._canvas.height = size.y;
+    
+        // After zoom/move, reseed so particles are on-screen + inside grid
         if (this._field) this._initParticles();
       },
+    
+      _initParticles: function() {
+        const count = Math.round(this._map.getSize().x * 0.8);
+        this._particles = Array.from({ length: count }, () => this._randomParticle());
+      },
+    
       _randomParticle: function() {
         const f = this._field;
-        if (!f) return { x: this._canvas.width/2, y: this._canvas.height/2, age: 0 };
-      
-        // Wind grid bounds (your grid goes SOUTH from lat0)
+        if (!f) return { x: this._canvas.width / 2, y: this._canvas.height / 2, age: 0 };
+    
         const lonMin = f.lon0;
         const lonMax = f.lon0 + f.dx * (f.nx - 1);
         const latMax = f.lat0;
         const latMin = f.lat0 - f.dy * (f.ny - 1);
-      
-        // Pick random lat/lon INSIDE the grid, then project to screen
+    
         for (let k = 0; k < 60; k++) {
           const lat = latMin + Math.random() * (latMax - latMin);
           const lon = lonMin + Math.random() * (lonMax - lonMin);
-      
+    
           const v = f.sample(lat, lon);
           if (!v) continue;
-      
+    
           const pt = this._map.latLngToContainerPoint([lat, lon]);
-        
-            // Keep only if it appears on the visible canvas
-            if (pt.x >= 0 && pt.y >= 0 && pt.x <= this._canvas.width && pt.y <= this._canvas.height) {
-              return { x: pt.x, y: pt.y, age: Math.random() * 200 };
-            }
+          if (pt.x >= 0 && pt.y >= 0 && pt.x <= this._canvas.width && pt.y <= this._canvas.height) {
+            return { x: pt.x, y: pt.y, age: Math.random() * 200 };
           }
-        
-          // Fallback
-          return { x: this._canvas.width/2, y: this._canvas.height/2, age: 0 };
-        },
-      
+        }
+    
+        return { x: this._canvas.width / 2, y: this._canvas.height / 2, age: 0 };
+      },
+    
       _start: function() {
         if (this._anim) cancelAnimationFrame(this._anim);
+    
         const frame = () => {
           this._step();
           this._anim = requestAnimationFrame(frame);
         };
         frame();
       },
+    
       _step: function() {
-        if (!this._field) return;
+        if (!this._field || !this._particles) return;
+    
         const ctx = this._ctx;
-
-        // fade trails
+    
+        // Trails (smaller alpha = longer tails)
         ctx.globalCompositeOperation = "source-over";
-        ctx.fillStyle = "rgba(0,0,0,0.01)";
+        ctx.fillStyle = "rgba(0,0,0,0.02)";
         ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
-
+    
         ctx.globalCompositeOperation = "lighter";
         ctx.lineWidth = 1.2;
-
+    
         for (const p of this._particles) {
           if (p.age++ > 200) {
             Object.assign(p, this._randomParticle());
             continue;
           }
-
+    
           const ll = this._map.containerPointToLatLng([p.x, p.y]);
           const v = this._field.sample(ll.lat, ll.lng);
           if (!v) {
             Object.assign(p, this._randomParticle());
             continue;
           }
-
-          // v = {u, v, speed}
-          const speed = v.speed; // m/s
-          const step = Math.min(1.0, speed * 0.15); // tune feel
-
-          // convert wind direction in lat/lng to screen dx/dy approximately:
-          // move a tiny amount in lat/lng, project, and compute delta pixels
-          const dLat = (v.v / 111320) * 0.08; // rough deg per m (scaled)
-          const dLng = (v.u / (111320 * Math.cos(ll.lat * Math.PI/180))) * 0.08;
-
+    
+          const speed = v.speed;
+          const step = Math.min(1.2, speed * 0.20);
+    
+          const dLat = (v.v / 111320) * 0.08;
+          const dLng = (v.u / (111320 * Math.cos(ll.lat * Math.PI / 180))) * 0.08;
+    
           const p1 = this._map.latLngToContainerPoint([ll.lat, ll.lng]);
           const p2 = this._map.latLngToContainerPoint([ll.lat + dLat, ll.lng + dLng]);
-
+    
           const dx = (p2.x - p1.x) * step;
           const dy = (p2.y - p1.y) * step;
-
+    
           const x2 = p.x + dx;
           const y2 = p.y + dy;
-
-          // color by speed
+    
           const c = Math.min(255, Math.round(speed * 10));
-          ctx.strokeStyle = `rgba(${c}, ${255-c}, 255, 0.85)`;
-
+          ctx.strokeStyle = `rgba(${c}, ${255 - c}, 255, 0.85)`;
+    
           ctx.beginPath();
           ctx.moveTo(p.x, p.y);
           ctx.lineTo(x2, y2);
           ctx.stroke();
-
+    
           p.x = x2;
           p.y = y2;
-
-          // recycle if offscreen
+    
           if (p.x < 0 || p.y < 0 || p.x > this._canvas.width || p.y > this._canvas.height) {
             Object.assign(p, this._randomParticle());
           }
         }
       }
     });
+
 
     // ---------- Parse your JSONs into a sampler ----------
     function readHeader(json) {
