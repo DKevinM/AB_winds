@@ -91,7 +91,7 @@
       },
     
       _initParticles: function() {
-        const count = Math.round(this._map.getSize().x * 0.8);
+        const count = Math.round(this._map.getSize().x * 1.5);
         this._particles = Array.from({ length: count }, () => this._randomParticle());
       },
     
@@ -137,7 +137,7 @@
     
         // Trails (smaller alpha = longer tails)
         ctx.globalCompositeOperation = "source-over";
-        ctx.fillStyle = "rgba(0,0,0,0.02)";
+        ctx.fillStyle = "rgba(0,0,0,0.01)";
         ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
     
         ctx.globalCompositeOperation = "lighter";
@@ -159,17 +159,34 @@
           const speed = v.speed;
           const step = Math.min(1.2, speed * 0.20);
     
-          const dLat = (v.v / 111320) * 0.08;
-          const dLng = (v.u / (111320 * Math.cos(ll.lat * Math.PI / 180))) * 0.08;
-    
+          // Advect using a real time step (seconds)
+          const dt = 600; // 10 minutes worth of wind per frame; tune 300–1200
+          const metersPerDegLat = 111320;
+          const metersPerDegLon = 111320 * Math.cos(ll.lat * Math.PI / 180);
+          
+          // target lat/lon after dt seconds
+          const lat2 = ll.lat + (v.v * dt) / metersPerDegLat;
+          const lon2 = ll.lng + (v.u * dt) / metersPerDegLon;
+          
           const p1 = this._map.latLngToContainerPoint([ll.lat, ll.lng]);
-          const p2 = this._map.latLngToContainerPoint([ll.lat + dLat, ll.lng + dLng]);
-    
-          const dx = (p2.x - p1.x) * step;
-          const dy = (p2.y - p1.y) * step;
-    
+          const p2 = this._map.latLngToContainerPoint([lat2, lon2]);
+          
+          // pixel motion this frame
+          let dx = (p2.x - p1.x);
+          let dy = (p2.y - p1.y);
+          
+          // clamp huge jumps (avoids streaks when zoomed in)
+          const maxStepPx = 20;
+          const mag = Math.hypot(dx, dy);
+          if (mag > maxStepPx) {
+            dx = (dx / mag) * maxStepPx;
+            dy = (dy / mag) * maxStepPx;
+          }
+          
           const x2 = p.x + dx;
           const y2 = p.y + dy;
+
+          
     
           const c = Math.min(255, Math.round(speed * 10));
           ctx.strokeStyle = `rgba(${c}, ${255 - c}, 255, 0.85)`;
