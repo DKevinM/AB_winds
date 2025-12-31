@@ -195,88 +195,68 @@
         frame();
       },
     
-      _step: function() {
+      _step: function () {
         if (!this._field || !this._particles) return;
+      
         const ctx = this._ctx;
-                
+      
         ctx.save();
-        if (this._maskPath) ctx.clip(this._maskPath, "evenodd");
-
-        // DEBUG: prove the canvas is drawing at all
+      
+        // Apply Alberta mask BEFORE any drawing
+        if (this._maskPath) {
+          ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
+          ctx.clip(this._maskPath, "evenodd");
+        }
+      
+        // Fade trails only inside Alberta
         ctx.globalCompositeOperation = "source-over";
-        ctx.fillStyle = "rgba(255,0,0,0.9)";
-        ctx.fillRect(8, 8, 12, 12);
-        
-    
-        // fade existing pixels by reducing alpha (keeps transparency)
-        ctx.globalCompositeOperation = "source-over";
-        ctx.fillStyle = "rgba(0, 0, 0, 0.05)";   // 0.03–0.08 is the sweet spot
+        ctx.fillStyle = "rgba(0, 0, 0, 0.04)";
         ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
-        
-        // draw new strokes normally
-        ctx.globalCompositeOperation = "source-over";
+      
         ctx.lineWidth = 0.9;
-    
+      
         for (const p of this._particles) {
           if (p.age++ > 200) {
             Object.assign(p, this._randomParticle());
             continue;
           }
-    
-          const ll = this._map.containerPointToLatLng([p.x, p.y]);
+      
+          const ll = this._canvasPointToLatLng(p.x, p.y);
           const v = this._field.sample(ll.lat, ll.lng);
           if (!v) {
             Object.assign(p, this._randomParticle());
             continue;
           }
-    
-          const speed = v.speed;
-          const step = Math.min(1.2, speed * 0.20);
-    
-          // Advect using a real time step (seconds)
-          const dt = 600; // 10 minutes worth of wind per frame; tune 300–1200
+      
+          const dt = 600;
           const metersPerDegLat = 111320;
           const metersPerDegLon = 111320 * Math.cos(ll.lat * Math.PI / 180);
-          
-          // target lat/lon after dt seconds
+      
           const lat2 = ll.lat + (v.v * dt) / metersPerDegLat;
           const lon2 = ll.lng + (v.u * dt) / metersPerDegLon;
-          
-          const p1 = this._map.latLngToContainerPoint([ll.lat, ll.lng]);
-          const p2 = this._map.latLngToContainerPoint([lat2, lon2]);
-          
-          // pixel motion this frame
-          let dx = (p2.x - p1.x);
-          let dy = (p2.y - p1.y);
-          
-          // clamp huge jumps (avoids streaks when zoomed in)
-          const maxStepPx = 20;
-          const mag = Math.hypot(dx, dy);
-          if (mag > maxStepPx) {
-            dx = (dx / mag) * maxStepPx;
-            dy = (dy / mag) * maxStepPx;
-          }
-          
-          const x2 = p.x + dx;
-          const y2 = p.y + dy;
-
-          
-    
+      
+          const p2 = this._latLngToCanvasPoint(lat2, lon2);
+      
+          const dx = p2.x - p.x;
+          const dy = p2.y - p.y;
+      
+          const speed = v.speed;
           const c = Math.min(255, Math.round(speed * 10));
           ctx.strokeStyle = `rgba(${c}, ${255 - c}, 255, 0.9)`;
-    
+      
           ctx.beginPath();
           ctx.moveTo(p.x, p.y);
-          ctx.lineTo(x2, y2);
+          ctx.lineTo(p2.x, p2.y);
           ctx.stroke();
-    
-          p.x = x2;
-          p.y = y2;
-    
+      
+          p.x = p2.x;
+          p.y = p2.y;
+      
           if (p.x < 0 || p.y < 0 || p.x > this._canvas.width || p.y > this._canvas.height) {
             Object.assign(p, this._randomParticle());
           }
         }
+      
         ctx.restore();
       }
     });
