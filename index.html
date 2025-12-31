@@ -70,6 +70,14 @@
         this._canvas = L.DomUtil.create("canvas", "wind");
         this._canvas.classList.add("wind");
         this._ctx = this._canvas.getContext("2d");
+        this._canvas.width = window.innerWidth;
+        this._canvas.height = window.innerHeight;
+        
+        this._ctx.fillStyle = "rgba(255, 0, 0, 1)";
+        this._ctx.fillRect(50, 50, 100, 100);
+        
+        console.log("CANVAS ADDED", this._canvas);
+        
         map.getPanes().overlayPane.appendChild(this._canvas);
     
         map.on("move zoom resize", this._reset, this);
