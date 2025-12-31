@@ -175,7 +175,7 @@
           const v = f.sample(lat, lon);
           if (!v) continue;
     
-          const pt = this._latLngToCanvasPoint(lat, lon);
+          const pt = this._map.latLngToContainerPoint([lat, lon]);
           if (pt.x >= 0 && pt.y >= 0 && pt.x <= this._canvas.width && pt.y <= this._canvas.height) {
             return { x: pt.x, y: pt.y, age: Math.random() * 200 };
           }
@@ -221,7 +221,7 @@
             continue;
           }
     
-          const ll = this._canvasPointToLatLng(p.x, p.y);
+          const ll = this._map.canvasPointToLatLng(p.x, p.y);
           const v = this._field.sample(ll.lat, ll.lng);
           if (!v) {
             Object.assign(p, this._randomParticle());
