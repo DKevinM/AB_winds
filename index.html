@@ -86,6 +86,7 @@
         this._reset();
       },
 
+      
       _onZoomStart: function() {
         if (!this._ctx) return;
         this._ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
@@ -155,6 +156,14 @@
         this._maskPath = path;
       },
       
+      _latLngToCanvasPoint: function (lat, lon) {
+        const p = this._map.latLngToContainerPoint([lat, lon]);
+        return p;
+      },
+
+      _canvasPointToLatLng: function (x, y) {
+        return this._map.containerPointToLatLng([x, y]);
+      },
       
       _initParticles: function() {
         const count = Math.round(this._map.getSize().x * 0.6);
