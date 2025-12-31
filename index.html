@@ -193,7 +193,7 @@
         if (this._anim) cancelAnimationFrame(this._anim);
     
         const frame = () => {
-          this._step();
+          this.();
           this._anim = requestAnimationFrame(frame);
         };
         frame();
@@ -201,8 +201,12 @@
     
       _step: function() {
         if (!this._field || !this._particles) return;
-    
         const ctx = this._ctx;
+        // DEBUG: prove the canvas is drawing at all
+        ctx.globalCompositeOperation = "source-over";
+        ctx.fillStyle = "rgba(255,0,0,0.9)";
+        ctx.fillRect(8, 8, 12, 12);
+        
         ctx.save();
         if (this._maskPath) ctx.clip(this._maskPath);
 
