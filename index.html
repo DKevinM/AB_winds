@@ -226,7 +226,7 @@
             continue;
           }
     
-          const ll = this._map.containerPointToLatLng([p.x, p.y]);
+          const ll = this._canvasPointToLatLng(p.x, p.y);
           const v = this._field.sample(ll.lat, ll.lng);
           if (!v) {
             Object.assign(p, this._randomParticle());
