@@ -224,7 +224,7 @@
       
         // Fade trails only inside Alberta
         ctx.globalCompositeOperation = "source-over";
-        ctx.fillStyle = "rgba(0, 0, 0, 0.06)";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
         ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
       
         ctx.lineWidth = 0.9;
@@ -242,7 +242,7 @@
             continue;
           }
       
-          const dt = 450;
+          const dt = 300 + 900 * s;   // 300–1200 seconds per frame
           const metersPerDegLat = 111320;
           const metersPerDegLon = 111320 * Math.cos(ll.lat * Math.PI / 180);
       
@@ -254,9 +254,18 @@
           const dx = p2.x - p.x;
           const dy = p2.y - p.y;
       
-          const speed = v.speed;
-          const c = Math.min(255, Math.round(speed * 10));
-          ctx.strokeStyle = `rgba(${c}, ${255 - c}, 255, 0.9)`;
+
+          const speed = v.speed;          
+          // Normalize speed (tune these for your dataset)
+          const s = Math.min(Math.max((speed - 0.5) / 8, 0), 1);
+          // Color: calm = blue, strong = red
+          const r = Math.round(255 * s);
+          const g = Math.round(180 * (1 - s));
+          const b = Math.round(255 * (1 - s));
+          ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.9)`;
+          // Line width: calm = thin, strong = thick
+          ctx.lineWidth = 0.6 + 2.0 * s;
+
       
           ctx.beginPath();
           ctx.moveTo(p.x, p.y);
