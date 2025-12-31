@@ -100,20 +100,19 @@
       _reset: function() {
         const size = this._map.getSize();
       
-        // Anchor canvas to the map's top-left in layer coordinates
-        const topLeft = this._map.containerPointToLayerPoint([0, 0]);
-        L.DomUtil.setPosition(this._canvas, topLeft);
+        // store top-left (layer coords) so we can convert lat/lon <-> canvas pixels
+        this._topLeft = this._map.containerPointToLayerPoint([0, 0]);
+        L.DomUtil.setPosition(this._canvas, this._topLeft);
       
-        // Resize canvas to match map viewport
         this._canvas.width = size.x;
         this._canvas.height = size.y;
       
-        // Clear after resize (resize already clears, but keep explicit)
         this._ctx.clearRect(0, 0, size.x, size.y);
       
         if (this._field) this._initParticles();
         this._updateMaskPath();
       },
+
 
       setMask: function(geojson) {
         this._maskGeoJSON = geojson;
@@ -121,30 +120,44 @@
       },
       
       _updateMaskPath: function() {
-        if (!this._maskGeoJSON) return;
+        if (!this._maskGeoJSON || !this._topLeft) return;
       
         const path = new Path2D();
       
         const addRing = (ring) => {
           ring.forEach(([lon, lat], i) => {
-            const p = this._map.latLngToContainerPoint([lat, lon]);
+            const p = this._latLngToCanvasPoint(lat, lon);
             if (i === 0) path.moveTo(p.x, p.y);
             else path.lineTo(p.x, p.y);
           });
           path.closePath();
         };
       
-        const geom = this._maskGeoJSON.features[0].geometry;
+        for (const feat of this._maskGeoJSON.features) {
+          const geom = feat.geometry;
+          if (!geom) continue;
       
-        if (geom.type === "Polygon") {
-          geom.coordinates.forEach(addRing);
-        } else if (geom.type === "MultiPolygon") {
-          geom.coordinates.forEach(poly => poly.forEach(addRing));
+          if (geom.type === "Polygon") {
+            geom.coordinates.forEach(addRing);
+          } else if (geom.type === "MultiPolygon") {
+            geom.coordinates.forEach(poly => poly.forEach(addRing));
+          }
         }
       
         this._maskPath = path;
       },
 
+
+      _latLngToCanvasPoint: function(lat, lon) {
+        const p = this._map.latLngToLayerPoint([lat, lon]);
+        return p.subtract(this._topLeft); // now in canvas pixel coords
+      },
+      
+      _canvasPointToLatLng: function(x, y) {
+        const p = L.point(x, y).add(this._topLeft); // back to layer coords
+        return this._map.layerPointToLatLng(p);
+      },
+      
       
       _initParticles: function() {
         const count = Math.round(this._map.getSize().x * 0.6);
@@ -167,7 +180,7 @@
           const v = f.sample(lat, lon);
           if (!v) continue;
     
-          const pt = this._map.latLngToContainerPoint([lat, lon]);
+          const pt = this._latLngToCanvasPoint(lat, lon);
           if (pt.x >= 0 && pt.y >= 0 && pt.x <= this._canvas.width && pt.y <= this._canvas.height) {
             return { x: pt.x, y: pt.y, age: Math.random() * 200 };
           }
@@ -209,7 +222,7 @@
             continue;
           }
     
-          const ll = this._map.containerPointToLatLng([p.x, p.y]);
+          const ll = this._canvasPointToLatLng(p.x, p.y);
           const v = this._field.sample(ll.lat, ll.lng);
           if (!v) {
             Object.assign(p, this._randomParticle());
@@ -228,8 +241,8 @@
           const lat2 = ll.lat + (v.v * dt) / metersPerDegLat;
           const lon2 = ll.lng + (v.u * dt) / metersPerDegLon;
           
-          const p1 = this._map.latLngToContainerPoint([ll.lat, ll.lng]);
-          const p2 = this._map.latLngToContainerPoint([lat2, lon2]);
+          const p1 = this._latLngToCanvasPoint(ll.lat, ll.lng);
+          const p2 = this._latLngToCanvasPoint(lat2, lon2);
           
           // pixel motion this frame
           let dx = (p2.x - p1.x);
