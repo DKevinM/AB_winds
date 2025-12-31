@@ -108,22 +108,16 @@
         this._field = field;
       },
       
-    
+  
       _reset: function() {
         const size = this._map.getSize();
-      
-        // store top-left (layer coords) so we can convert lat/lon <-> canvas pixels
-        this._topLeft = this._map.containerPointToLayerPoint([0, 0]);
-        L.DomUtil.setPosition(this._canvas, this._topLeft);
-      
         this._canvas.width = size.x;
         this._canvas.height = size.y;
-      
         this._ctx.clearRect(0, 0, size.x, size.y);
       
         if (this._field) this._initParticles();
-        this._updateMaskPath();
       },
+
 
 
       setMask: function(geojson) {
@@ -157,17 +151,6 @@
         }
       
         this._maskPath = path;
-      },
-
-
-      _latLngToCanvasPoint: function(lat, lon) {
-        const p = this._map.latLngToLayerPoint([lat, lon]);
-        return p.subtract(this._topLeft); // now in canvas pixel coords
-      },
-      
-      _canvasPointToLatLng: function(x, y) {
-        const p = L.point(x, y).add(this._topLeft); // back to layer coords
-        return this._map.layerPointToLatLng(p);
       },
       
       
