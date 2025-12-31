@@ -191,9 +191,8 @@
     
       _start: function() {
         if (this._anim) cancelAnimationFrame(this._anim);
-    
         const frame = () => {
-          this.();
+          this._step();
           this._anim = requestAnimationFrame(frame);
         };
         frame();
