@@ -226,7 +226,7 @@
             continue;
           }
     
-          const ll = this._canvasPointToLatLng(p.x, p.y);
+          const ll = this._map.containerPointToLatLng([p.x, p.y]);
           const v = this._field.sample(ll.lat, ll.lng);
           if (!v) {
             Object.assign(p, this._randomParticle());
@@ -245,8 +245,8 @@
           const lat2 = ll.lat + (v.v * dt) / metersPerDegLat;
           const lon2 = ll.lng + (v.u * dt) / metersPerDegLon;
           
-          const p1 = this._latLngToCanvasPoint(ll.lat, ll.lng);
-          const p2 = this._latLngToCanvasPoint(lat2, lon2);
+          const p1 = this._map.latLngToContainerPoint([ll.lat, ll.lng]);
+          const p2 = this._map.latLngToContainerPoint([lat2, lon2]);
           
           // pixel motion this frame
           let dx = (p2.x - p1.x);
