@@ -243,37 +243,54 @@
           }
       
           const metersPerDegLat = 111320;
+          const metersPerDegLon = 111320 * Math.cos(ll.lat * Math.PI / 180);     
+     
+          const speed = v.speed;
+          
+          // 1️⃣ Normalize speed first
+          const s = Math.min(Math.max((speed - 0.5) / 8, 0), 1);
+          
+          // 2️⃣ Time step depends on wind strength
+          const dt = 300 + 900 * s;
+          
+          // 3️⃣ Convert wind → lat/lon motion
+          const metersPerDegLat = 111320;
           const metersPerDegLon = 111320 * Math.cos(ll.lat * Math.PI / 180);
-      
+          
           const lat2 = ll.lat + (v.v * dt) / metersPerDegLat;
           const lon2 = ll.lng + (v.u * dt) / metersPerDegLon;
-      
+          
           const p2 = this._latLngToCanvasPoint(lat2, lon2);
-      
-          const dx = p2.x - p.x;
-          const dy = p2.y - p.y;
-      
-
-          const speed = v.speed;          
-          // Normalize speed (tune these for your dataset)
-          const s = Math.min(Math.max((speed - 0.5) / 8, 0), 1);
-          const dt = 300 + 900 * s;
-          // Color: calm = blue, strong = red
+          
+          // 4️⃣ Pixel movement
+          let dx = p2.x - p.x;
+          let dy = p2.y - p.y;
+          
+          // Clamp giant jumps
+          const maxStepPx = 20;
+          const mag = Math.hypot(dx, dy);
+          if (mag > maxStepPx) {
+            dx = (dx / mag) * maxStepPx;
+            dy = (dy / mag) * maxStepPx;
+          }
+          
+          // 5️⃣ Color & thickness from speed
           const r = Math.round(255 * s);
           const g = Math.round(180 * (1 - s));
           const b = Math.round(255 * (1 - s));
+          
           ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.9)`;
-          // Line width: calm = thin, strong = thick
           ctx.lineWidth = 0.6 + 2.0 * s;
-
-      
+          
+          // 6️⃣ Draw
           ctx.beginPath();
           ctx.moveTo(p.x, p.y);
-          ctx.lineTo(p2.x, p2.y);
+          ctx.lineTo(p.x + dx, p.y + dy);
           ctx.stroke();
-      
-          p.x = p2.x;
-          p.y = p2.y;
+          
+          p.x += dx;
+          p.y += dy;
+
       
           if (p.x < 0 || p.y < 0 || p.x > this._canvas.width || p.y > this._canvas.height) {
             Object.assign(p, this._randomParticle());
