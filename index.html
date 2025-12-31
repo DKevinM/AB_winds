@@ -111,15 +111,23 @@
         this._field = field;
       },
       
-  
-      _reset: function() {
+
+      _reset: function () {
         const size = this._map.getSize();
+      
+        // anchor canvas to map origin
+        this._topLeft = this._map.containerPointToLayerPoint([0, 0]);
+        L.DomUtil.setPosition(this._canvas, this._topLeft);
+      
         this._canvas.width = size.x;
         this._canvas.height = size.y;
+      
         this._ctx.clearRect(0, 0, size.x, size.y);
       
         if (this._field) this._initParticles();
+        this._updateMaskPath();
       },
+
 
 
 
@@ -156,14 +164,16 @@
         this._maskPath = path;
       },
       
-      _latLngToCanvasPoint: function (lat, lon) {
-        const p = this._map.latLngToContainerPoint([lat, lon]);
-        return p;
+      _latLngToCanvasPoint(lat, lon) {
+        const p = this._map.latLngToLayerPoint([lat, lon]);
+        return p.subtract(this._topLeft);
+      },
+      
+      _canvasPointToLatLng(x, y) {
+        const p = L.point(x, y).add(this._topLeft);
+        return this._map.layerPointToLatLng(p);
       },
 
-      _canvasPointToLatLng: function (x, y) {
-        return this._map.containerPointToLatLng([x, y]);
-      },
       
       _initParticles: function() {
         const count = Math.round(this._map.getSize().x * 0.6);
@@ -219,13 +229,13 @@
       
         // Fade trails only inside Alberta
         ctx.globalCompositeOperation = "source-over";
-        ctx.fillStyle = "rgba(0, 0, 0, 0.001)";
+        ctx.fillStyle = "rgba(0, 0, 0, 0.06)";
         ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
       
         ctx.lineWidth = 0.9;
       
         for (const p of this._particles) {
-          if (p.age++ > 200) {
+          if (p.age++ > 150) {
             Object.assign(p, this._randomParticle());
             continue;
           }
@@ -237,7 +247,7 @@
             continue;
           }
       
-          const dt = 600;
+          const dt = 450;
           const metersPerDegLat = 111320;
           const metersPerDegLon = 111320 * Math.cos(ll.lat * Math.PI / 180);
       
