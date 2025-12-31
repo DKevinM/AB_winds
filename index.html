@@ -79,8 +79,10 @@
         console.log("CANVAS ADDED", this._canvas);
         
         map.getPanes().overlayPane.appendChild(this._canvas);
-    
+
         map.on("move zoom resize", this._reset, this);
+        map.on("moveend zoomend resize", this._updateMaskPath, this);
+        
         this._reset();
       },
 
@@ -429,10 +431,13 @@
 
     const windLayer = new WindLayer();
     windLayer.addTo(map);
-
+    
     fetch("data/Alberta.geojson")
       .then(r => r.json())
-      .then(gj => windLayer.setMask(gj));
+      .then(gj => {
+        windLayer.setMask(gj);
+        windLayer._updateMaskPath();  
+      });
     
 
     loadWind()
