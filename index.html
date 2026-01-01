@@ -60,6 +60,39 @@
       attribution: "&copy; OpenStreetMap"
     }).addTo(map);
 
+
+    
+    const overlays = {};   // for layer control
+    
+    function loadOutlineLayer(url, color, name) {
+      return fetch(url)
+        .then(r => r.json())
+        .then(geo => {
+          const layer = L.geoJSON(geo, {
+            style: {
+              color: color,
+              weight: 2,
+              fillOpacity: 0
+            }
+          });
+    
+          overlays[name] = layer;
+          layer.addTo(map);
+        });
+    }
+    
+    // Load ACA and WCAS
+    Promise.all([
+      loadOutlineLayer("data/aca.geojson", "#ffcc00", "ACA Airshed"),
+      loadOutlineLayer("data/wcas.geojson", "#00ffff", "WCAS Airshed")
+    ]).then(() => {
+      L.control.layers(null, overlays, { collapsed: false }).addTo(map);
+    });
+
+
+
+    
+
     // ---------- Minimal wind particle canvas layer ----------
     const WindLayer = L.Layer.extend({
       onAdd: function(map) {
@@ -317,6 +350,9 @@
       
       const uh = uJson.header;
       const vh = vJson.header;
+
+      const modelTime = uh.refTime || uh.referenceTime || uh.time || "Unknown time";
+
       
       // Your actual grid parameters
       const nx = uh.nx;          // 354
@@ -350,7 +386,7 @@
       }
       
       return {
-        nx, ny, lon0, lat0, dx, dy,
+        nx, ny, lon0, lat0, dx, dy,modelTime,
         sample: (lat, lon) => {
 
           // Fractional grid position
@@ -455,6 +491,48 @@
       });
     
 
+    function getCompassArrow(deg) {
+      const dirs = ["N","NE","E","SE","S","SW","W","NW"];
+      return dirs[Math.round(deg / 45) % 8];
+    }
+    
+    map.on("click", (e) => {
+      if (!field) return;
+    
+      const { lat, lng } = e.latlng;
+      const wind = field.sample(lat, lng);
+    
+      if (!wind) {
+        L.popup()
+          .setLatLng(e.latlng)
+          .setContent("No wind data at this location")
+          .openOn(map);
+        return;
+      }
+    
+      const dir = (270 - Math.atan2(wind.v, wind.u) * 180 / Math.PI + 360) % 360;
+      const speed = wind.speed;
+      const arrow = getCompassArrow(dir);
+    
+      const time = field.modelTime
+        ? new Date(field.modelTime).toLocaleString()
+        : "Unknown time";
+    
+      const html = `
+        <b>Wind at clicked point</b><br>
+        Time: ${time}<br>
+        Speed: ${speed.toFixed(2)} m/s<br>
+        Direction: ${dir.toFixed(0)}° ${arrow}
+      `;
+    
+      L.popup()
+        .setLatLng(e.latlng)
+        .setContent(html)
+        .openOn(map);
+    });
+
+
+    
     loadWind()
       .then(field => windLayer.setField(field))
       .catch(err => {
