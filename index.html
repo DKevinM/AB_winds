@@ -252,8 +252,8 @@
           const metersPerDegLat = 111320;
           const metersPerDegLon = 111320 * Math.cos(ll.lat * Math.PI / 180);
           
-          const lat2 = ll.lat - (v.v * dt) / metersPerDegLat;
-          const lon2 = ll.lng - (v.u * dt) / metersPerDegLon;
+          const lat2 = ll.lat + (v.v * dt) / metersPerDegLat;
+          const lon2 = ll.lng + (v.u * dt) / metersPerDegLon;
           
           const p2 = this._latLngToCanvasPoint(lat2, lon2);
           
