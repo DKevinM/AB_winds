@@ -83,8 +83,8 @@
     
     // Load ACA and WCAS
     Promise.all([
-      loadOutlineLayer("data/aca.geojson", "#ffcc00", "ACA Airshed"),
-      loadOutlineLayer("data/wcas.geojson", "#00ffff", "WCAS Airshed")
+      loadOutlineLayer("data/ACA.geojson", "#ffcc00", "ACA Airshed"),
+      loadOutlineLayer("data/WCAS.geojson", "#00ffff", "WCAS Airshed")
     ]).then(() => {
       L.control.layers(null, overlays, { collapsed: false }).addTo(map);
     });
