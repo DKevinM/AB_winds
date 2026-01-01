@@ -44,6 +44,11 @@
 
   <script>
     let field = null;
+    let windTime = {
+      baseUTC: null,
+      i: 0,
+      a: 0
+    };    
     // ---------- CONFIG YOU MAY NEED TO EDIT ----------
     // These MUST match whatever your ab_wind_json.py writes into the header.
     // If your JSON header names differ, adjust readHeader() below.
@@ -416,6 +421,9 @@
     
       let activeField = buildField(uJsons[0], vJsons[0]);
       field = activeField;
+
+      windTime.baseUTC = new Date(activeField.modelTime);
+
     
       // Quick sanity probe
       const test = activeField.sample(54.5, -114.0);
@@ -426,6 +434,9 @@
         const i = Math.floor(t) % uJsons.length;
         const j = (i + 1) % uJsons.length;
         const a = t - Math.floor(t);
+        
+        windTime.i = i;
+        windTime.a = a;
     
         const f1 = buildField(uJsons[i], vJsons[i]);
         const f2 = buildField(uJsons[j], vJsons[j]);
@@ -486,13 +497,21 @@
       const speed = wind.speed;
       const arrow = getCompassArrow(dir);
     
-      const time = field.modelTime
-        ? new Date(field.modelTime).toLocaleString()
-        : "Unknown time";
+      const range = getBlendedTimeRange();
+      
+      let timeText = "Unknown time";
+      if (range) {
+        timeText = `
+          ${range.start.toLocaleString()}  
+          → ${range.end.toLocaleString()}
+          <br><i>Blend position: ${Math.round(windTime.a * 100)}%</i>
+        `;
+      }
     
       const html = `
         <b>Wind at clicked point</b><br>
-        Time: ${time}<br>
+        Valid time window:<br>
+        ${timeText}<br>
         Speed: ${speed.toFixed(2)} m/s<br>
         Direction: ${dir.toFixed(0)}° ${arrow}
       `;
@@ -512,6 +531,41 @@
         console.error(err);
       });
 
+    
+    function getBlendedTimeRange() {
+      if (!windTime.baseUTC) return null;
+    
+      const start = new Date(
+        windTime.baseUTC.getTime() + windTime.i * 3600_000
+      );
+    
+      const end = new Date(
+        windTime.baseUTC.getTime() + (windTime.i + 1) * 3600_000
+      );
+    
+      const mid = new Date(
+        windTime.baseUTC.getTime() + (windTime.i + windTime.a) * 3600_000
+      );
+    
+      return { start, mid, end };
+    }
+    
+    // Reload wind data every hour on the hour
+    function scheduleHourlyReload() {
+      const now = new Date();
+      const nextHour = new Date(now);
+      nextHour.setHours(now.getHours() + 1, 0, 5, 0); // 5 sec after hour
+    
+      const delay = nextHour - now;
+    
+      setTimeout(() => {
+        console.log("🔄 Hourly wind refresh");
+        loadWind().then(f => windLayer.setField(f));
+        scheduleHourlyReload();
+      }, delay);
+    }
+    
+    scheduleHourlyReload();
         
   </script>
 </body>
