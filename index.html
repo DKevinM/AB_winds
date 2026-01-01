@@ -266,7 +266,7 @@
         // Apply Alberta mask
         // if (this._maskPath) ctx.clip(this._maskPath, "evenodd");
 
-        ctx.lineWidth = 0.9;
+        ctx.lineWidth = 1.6;
         ctx.beginPath();
       
         for (const p of this._particles) {
@@ -291,8 +291,11 @@
           const p1 = this._latLngToCanvasPoint(p.lat, p.lon);
           const p2 = this._latLngToCanvasPoint(lat2, lon2);
 
-          const c = Math.min(255, Math.round(v.speed * 10));
-          ctx.strokeStyle = `rgba(${c}, ${255-c}, 255, 0.85)`;
+          const c = Math.min(255, Math.round(v.speed * 12));
+          ctx.strokeStyle = `rgba(${Math.max(80, c)}, ${Math.max(40, 200-c)}, 255, 0.95)`;
+          ctx.shadowColor = ctx.strokeStyle;
+          ctx.shadowBlur = v.speed > 6 ? 6 : 2;
+
 
           ctx.moveTo(p1.x, p1.y);
           ctx.lineTo(p2.x, p2.y);
@@ -326,10 +329,7 @@
       };
     }
 
-    function buildField(uJson, vJson) {
-      console.log("DEBUG: First 50 U values:", uJson.data.slice(0, 50));
-      console.log("DEBUG: First 50 V values:", vJson.data.slice(0, 50));
-      
+    function buildField(uJson, vJson) {     
       const uh = uJson.header;
       const vh = vJson.header;
 
@@ -343,11 +343,7 @@
       const lat0 = uh.la1;       // 60.64398 (NORTHERN point)
       const dx = uh.dx;          // 0.04537
       const dy = uh.dy;          // 0.02274 POSITIVE = goes SOUTHWARD
-      
-      console.log(`Grid: ${nx}x${ny}, Origin: (${lon0}, ${lat0}), dx:${dx}, dy:${dy}`);
-      console.log(`Grid covers: Lon ${lon0} to ${lon0 + dx * (nx-1)}, 
-                   Lat ${lat0} to ${lat0 - dy * (ny-1)}`); // Note: minus because dy positive
-      
+           
       const uData = uJson.data;
       const vData = vJson.data;
       
@@ -359,13 +355,7 @@
           break;
         }
       }
-      console.log(`First non-null U at index ${firstNonNull}: ${uData[firstNonNull]}`);
       
-      // Test different indices to understand data layout
-      console.log("Testing data at various indices:");
-      for (let idx of [1000, 5000, 10000, 50000, 100000]) {
-        console.log(`  [${idx}]: U=${uData[idx]}, V=${vData[idx]}`);
-      }
       
       return {
         nx, ny, lon0, lat0, dx, dy,modelTime,
@@ -428,7 +418,6 @@
     
       // Quick sanity probe
       const test = activeField.sample(54.5, -114.0);
-      console.log("TEST SAMPLE @ AB:", test);
     
       // Animate forecast blending
       let t = 0;
@@ -522,35 +511,6 @@
         console.error(err);
       });
 
-    function runDiagnosticTest() {
-      console.log("=== DIAGNOSTIC TEST ===");
-      
-      // Test 1: Check if files exist
-      fetch(U_URLS[0]).then(r => {
-        return r.json();
-      }).then(data => {
-        
-        
-        // Show first few data points
-        const dataArray = data.data || data.values || data.u;
-        if (dataArray && dataArray.length) {
-        }
-      }).catch(err => console.error("U fetch error:", err));
-      
-      // Repeat for V
-      fetch(V_URLS[0]).then(r => {
-        return r.json();
-      }).then(data => {
-        const dataArray = data.data || data.values || data.v;
-        if (dataArray && dataArray.length) {
-        }
-      }).catch(err => console.error("V fetch error:", err));
-    }
-    
-    // Run after page loads
-    window.addEventListener('load', () => {
-      setTimeout(runDiagnosticTest, 1000);
-    });
         
   </script>
 </body>
