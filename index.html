@@ -179,8 +179,8 @@
         const addRing = (ring) => {
           ring.forEach(([lon, lat], i) => {
             const p = this._latLngToCanvasPoint(lat, lon);
-            if (i === 0) path.moveTo(p.x, p.y);
-            else path.lineTo(p.x, p.y);
+            if (i === 0) path.moveTo(p.lat, p.lon);
+            else path.lineTo(p.lat, p.lon);
           });
           path.closePath();
         };
@@ -212,13 +212,13 @@
 
       
       _initParticles: function() {
-        const count = Math.round(this._map.getSize().x * 0.6);
+        const count = Math.round(this._map.getSize().x * 0.4);
         this._particles = Array.from({ length: count }, () => this._randomParticle());
       },
     
       _randomParticle: function() {
         const f = this._field;
-        if (!f) return { x: this._canvas.width / 2, y: this._canvas.height / 2, age: 0 };
+        if (!f) return { lat: 54.5, lon: -114.0, age: 0 };
     
         const lonMin = f.lon0;
         const lonMax = f.lon0 + f.dx * (f.nx - 1);
@@ -234,11 +234,11 @@
     
           const pt = this._latLngToCanvasPoint(lat, lon);
           if (pt.x >= 0 && pt.y >= 0 && pt.x <= this._canvas.width && pt.y <= this._canvas.height) {
-            return { x: pt.x, y: pt.y, age: Math.random() * 200 };
+            return { lat, lon, age: Math.random() * 200 };
           }
         }
     
-        return { x: this._canvas.width / 2, y: this._canvas.height / 2, age: 0 };
+        return { lat: 54.5, lon: -114.0, age: 0 };
       },
     
       _start: function() {
@@ -267,6 +267,7 @@
         // if (this._maskPath) ctx.clip(this._maskPath, "evenodd");
 
         ctx.lineWidth = 0.9;
+        ctx.beginPath();
       
         for (const p of this._particles) {
           if (p.age++ > 150) {
@@ -274,65 +275,38 @@
             continue;
           }
       
-          const ll = this._canvasPointToLatLng(p.x, p.y);
-          const v = this._field.sample(ll.lat, ll.lng);
-          if (!v) {
-            Object.assign(p, this._randomParticle());
-            continue;
-          } 
-     
-          const speed = v.speed;
+
+          const ll = { lat: p.lat, lon: p.lon };
+          const v = this._field.sample(ll.lat, ll.lon);
+          if (!v) { Object.assign(p, this._randomParticle()); continue; }
           
-          // 1️⃣ Normalize speed first
-          const s = Math.min(Math.max((speed - 0.5) / 8, 0), 1);
-          
-          // 2️⃣ Time step depends on wind strength
-          const dt = 300 + 900 * s;
-          
-          // 3️⃣ Convert wind → lat/lon motion
+          const dt = 600;
           const metersPerDegLat = 111320;
           const metersPerDegLon = 111320 * Math.cos(ll.lat * Math.PI / 180);
           
           const lat2 = ll.lat + (v.v * dt) / metersPerDegLat;
-          const lon2 = ll.lng + (v.u * dt) / metersPerDegLon;
+          const lon2 = ll.lon + (v.u * dt) / metersPerDegLon;
           
+          // Draw using projection only at render time
+          const p1 = this._latLngToCanvasPoint(p.lat, p.lon);
           const p2 = this._latLngToCanvasPoint(lat2, lon2);
-          
-          // 4️⃣ Pixel movement
-          let dx = p2.x - p.x;
-          let dy = p2.y - p.y;
-          
-          // Clamp giant jumps
-          const maxStepPx = 20;
-          const mag = Math.hypot(dx, dy);
-          if (mag > maxStepPx) {
-            dx = (dx / mag) * maxStepPx;
-            dy = (dy / mag) * maxStepPx;
-          }
-          
-          // 5️⃣ Color & thickness from speed
-          const r = Math.round(255 * s);
-          const g = Math.round(180 * (1 - s));
-          const b = Math.round(255 * (1 - s));
-          
-          ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.9)`;
-          ctx.lineWidth = 0.6 + 2.0 * s;
-          
-          // 6️⃣ Draw
-          ctx.beginPath();
-          ctx.moveTo(p.x, p.y);
-          ctx.lineTo(p.x + dx, p.y + dy);
-          ctx.stroke();
-          
-          p.x += dx;
-          p.y += dy;
 
+          const c = Math.min(255, Math.round(v.speed * 10));
+          ctx.strokeStyle = `rgba(${c}, ${255-c}, 255, 0.85)`;
+
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          
+          // Update particle in geographic space
+          p.lat = lat2;
+          p.lon = lon2;
       
-          if (p.x < 0 || p.y < 0 || p.x > this._canvas.width || p.y > this._canvas.height) {
+          if (!this._field.sample(p.lat, p.lon)) {
             Object.assign(p, this._randomParticle());
           }
         }
       
+        ctx.stroke();
         ctx.restore();
       }
     });
