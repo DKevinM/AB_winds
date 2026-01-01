@@ -216,15 +216,14 @@
       
         ctx.save();
 
-        // Fade previous frame slightly
+        // Fade trails by removing alpha (not painting black)
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.fillStyle = "rgba(0,0,0,0.05)";
+        ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
         ctx.globalCompositeOperation = "source-over";
-        ctx.fillStyle = "rgba(0, 0, 0, 0.06)";
-        ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);        
-      
-        // Now apply mask (so only Alberta fades & draws)
-        if (this._maskPath) {
-          ctx.clip(this._maskPath, "evenodd");
-        }
+        
+        // Apply Alberta mask
+        if (this._maskPath) ctx.clip(this._maskPath, "evenodd");
 
         ctx.lineWidth = 0.9;
       
