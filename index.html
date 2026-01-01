@@ -143,10 +143,13 @@
       
 
 
+
       _reset: function () {
         const size = this._map.getSize();
       
+        // This is the missing anchor that fixes everything
         this._topLeft = this._map.containerPointToLayerPoint([0, 0]);
+      
         L.DomUtil.setPosition(this._canvas, this._topLeft);
       
         this._canvas.width = size.x;
@@ -157,6 +160,7 @@
         if (this._field) this._initParticles();
         if (this._maskGeoJSON) this._updateMaskPath();
       },
+
 
 
 
