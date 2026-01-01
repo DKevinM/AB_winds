@@ -76,8 +76,10 @@
           const layer = L.geoJSON(geo, {
             style: {
               color: color,
-              weight: 2,
-              fillOpacity: 0
+              weight: 4,
+              opacity: 1,
+              fillOpacity: 0,
+              dashArray: "6 3"
             }
           });
     
