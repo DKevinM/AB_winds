@@ -212,7 +212,7 @@
 
       
       _initParticles: function() {
-        const count = Math.round(this._map.getSize().x * 0.4);
+        const count = Math.round(this._map.getSize().x * 0.8);
         this._particles = Array.from({ length: count }, () => this._randomParticle());
       },
     
@@ -259,7 +259,7 @@
 
         // Fade trails by removing alpha (not painting black)
         ctx.globalCompositeOperation = "destination-out";
-        ctx.fillStyle = "rgba(0,0,0,0.05)";
+        ctx.fillStyle = "rgba(0,0,0,0.035)";
         ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
         ctx.globalCompositeOperation = "source-over";
         
@@ -280,7 +280,7 @@
           const v = this._field.sample(ll.lat, ll.lon);
           if (!v) { Object.assign(p, this._randomParticle()); continue; }
           
-          const dt = 600;
+          const dt = 1000;
           const metersPerDegLat = 111320;
           const metersPerDegLon = 111320 * Math.cos(ll.lat * Math.PI / 180);
           
