@@ -142,20 +142,22 @@
       },
       
 
+
       _reset: function () {
         const size = this._map.getSize();
       
-        // Force canvas to map origin (not overlay pane origin)
-        L.DomUtil.setPosition(this._canvas, { x: 0, y: 0 });
+        this._topLeft = this._map.containerPointToLayerPoint([0, 0]);
+        L.DomUtil.setPosition(this._canvas, this._topLeft);
       
         this._canvas.width = size.x;
         this._canvas.height = size.y;
       
-        this._ctx.setTransform(1, 0, 0, 1, 0, 0);
         this._ctx.clearRect(0, 0, size.x, size.y);
       
         if (this._field) this._initParticles();
+        if (this._maskGeoJSON) this._updateMaskPath();
       },
+
 
 
 
@@ -195,11 +197,13 @@
 
       
       _latLngToCanvasPoint: function (lat, lon) {
-        return this._map.latLngToContainerPoint([lat, lon]);
+        const p = this._map.latLngToLayerPoint([lat, lon]);
+        return p.subtract(this._topLeft);
       },
       
       _canvasPointToLatLng: function (x, y) {
-        return this._map.containerPointToLatLng([x, y]);
+        const p = L.point(x, y).add(this._topLeft);
+        return this._map.layerPointToLatLng(p);
       },
 
       
@@ -224,7 +228,7 @@
           const v = f.sample(lat, lon);
           if (!v) continue;
     
-          const pt = this._map.latLngToContainerPoint([lat, lon]);
+          const pt = this._latLngToCanvasPoint(lat, lon);
           if (pt.x >= 0 && pt.y >= 0 && pt.x <= this._canvas.width && pt.y <= this._canvas.height) {
             return { x: pt.x, y: pt.y, age: Math.random() * 200 };
           }
