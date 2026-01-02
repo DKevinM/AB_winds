@@ -66,6 +66,24 @@
     }).addTo(map);
 
 
+    function getDataAgeText(modelTimeISO) {
+      if (!modelTimeISO) return "Data age: unknown";
+    
+      const modelTime = new Date(modelTimeISO);
+      const now = new Date();
+    
+      const diffMs = now - modelTime;
+      const diffMin = Math.floor(diffMs / 60000);
+      const hours = Math.floor(diffMin / 60);
+      const minutes = diffMin % 60;
+    
+      if (hours > 0) {
+        return `Data age: ${hours}h ${minutes}m`;
+      } else {
+        return `Data age: ${minutes}m`;
+      }
+    }
+    
     
     const overlays = {};   // for layer control
     
@@ -464,7 +482,9 @@
       return field;
     }
 
+    
 
+    
     const windLayer = new WindLayer();
     windLayer.addTo(map);
     
@@ -527,30 +547,25 @@
 
     
     loadWind()
-      .then(field => windLayer.setField(field))
+      .then(f => {
+        windLayer.setField(f);
+    
+        // 🕒 Live update of data age display
+        setInterval(() => {
+          if (!field || !field.modelTime) return;
+    
+          const ageText = getDataAgeText(field.modelTime);
+          document.getElementById("info").innerHTML = `
+            Wind loaded<br>
+            <b>${ageText}</b>
+          `;
+        }, 60000);
+      })
       .catch(err => {
         document.getElementById("info").textContent = "ERROR: " + err.message;
         console.error(err);
       });
 
-    
-    function getBlendedTimeRange() {
-      if (!windTime.baseUTC) return null;
-    
-      const start = new Date(
-        windTime.baseUTC.getTime() + windTime.i * 3600_000
-      );
-    
-      const end = new Date(
-        windTime.baseUTC.getTime() + (windTime.i + 1) * 3600_000
-      );
-    
-      const mid = new Date(
-        windTime.baseUTC.getTime() + (windTime.i + windTime.a) * 3600_000
-      );
-    
-      return { start, mid, end };
-    }
     
     // Reload wind data every hour on the hour
     function scheduleHourlyReload() {
