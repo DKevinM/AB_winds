@@ -69,20 +69,21 @@
     function getDataAgeText(modelTimeISO) {
       if (!modelTimeISO) return "Data age: unknown";
     
-      const modelTime = new Date(modelTimeISO);
+      const modelTime = new Date(modelTimeISO.endsWith("Z") ? modelTimeISO : modelTimeISO + "Z");
       const now = new Date();
     
-      const diffMs = now - modelTime;
+      const diffMs = now.getTime() - modelTime.getTime();
+    
+      if (diffMs < 0) return "Data age: future data";
+    
       const diffMin = Math.floor(diffMs / 60000);
       const hours = Math.floor(diffMin / 60);
       const minutes = diffMin % 60;
     
-      if (hours > 0) {
-        return `Data age: ${hours}h ${minutes}m`;
-      } else {
-        return `Data age: ${minutes}m`;
-      }
+      if (hours > 0) return `Data age: ${hours}h ${minutes}m`;
+      return `Data age: ${minutes}m`;
     }
+
     
     
     const overlays = {};   // for layer control
@@ -442,7 +443,10 @@
       let activeField = buildField(uJsons[0], vJsons[0]);
       field = activeField;
 
-      windTime.baseUTC = new Date(activeField.modelTime + "Z");
+      
+      windTime.baseUTC = new Date(activeField.modelTime.endsWith("Z") 
+        ? activeField.modelTime 
+        : activeField.modelTime + "Z");
 
     
       // Quick sanity probe
