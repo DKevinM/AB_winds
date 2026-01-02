@@ -302,12 +302,6 @@ def main():
             print(f"Wrote {u_out}")
             print(f"Wrote {v_out}")
 
-            if lead_hour == 0:
-                with open(os.path.join(out_dir, "AB_u_latest.json"), "w") as f:
-                    json.dump(u_json, f, allow_nan=False)
-                with open(os.path.join(out_dir, "AB_v_latest.json"), "w") as f:
-                    json.dump(v_json, f, allow_nan=False)
-                print("Wrote AB_u_latest.json / AB_v_latest.json")
 
         finally:
             if u_path and os.path.exists(u_path):
