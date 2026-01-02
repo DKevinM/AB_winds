@@ -442,7 +442,7 @@
       let activeField = buildField(uJsons[0], vJsons[0]);
       field = activeField;
 
-      windTime.baseUTC = new Date(activeField.modelTime);
+      windTime.baseUTC = new Date(activeField.modelTime + "Z");
 
     
       // Quick sanity probe
@@ -560,7 +560,7 @@
     
     // Reload wind data every hour on the hour
     function scheduleHourlyReload() {
-      const now = new Date();
+      const now = new Date(Date.now());
       const nextHour = new Date(now);
       nextHour.setHours(now.getHours() + 1, 0, 5, 0); // 5 sec after hour
     
