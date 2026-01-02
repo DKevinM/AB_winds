@@ -69,24 +69,56 @@
     function getDataAgeText(modelTimeISO) {
       if (!modelTimeISO) return "Data age: unknown";
     
-      const modelTime = new Date(modelTimeISO.endsWith("Z") ? modelTimeISO : modelTimeISO + "Z");
-      const now = new Date();
+      const modelTime = Date.parse(modelTimeISO);
+      const nowUTC = Date.now();
     
-      const diffMs = now.getTime() - modelTime.getTime();
-    
-      if (diffMs < 0) return "Data age: future data";
+      const diffMs = nowUTC - modelTime;
     
       const diffMin = Math.floor(diffMs / 60000);
       const hours = Math.floor(diffMin / 60);
       const minutes = diffMin % 60;
     
-      if (hours > 0) return `Data age: ${hours}h ${minutes}m`;
-      return `Data age: ${minutes}m`;
+      if (hours > 0) {
+        return `Data age: ${hours}h ${minutes}m`;
+      } else {
+        return `Data age: ${minutes}m`;
+      }
+    }
+
+
+    function getEffectiveWindTime() {
+      if (!windTime.baseUTC) return null;
+      return new Date(
+        windTime.baseUTC.getTime() + (windTime.i + windTime.a) * 3600_000
+      );
     }
 
     
+    function getWindTimeDiagnostics() {
+      if (!field || !windTime.baseUTC) return "Wind time: unknown";
+    
+      const modelUTC = new Date(windTime.baseUTC).toUTCString();
+      const effectiveTime = getEffectiveWindTime();
+      const nowUTC = new Date();
+    
+      const ageMs = nowUTC - effectiveTime;
+      const ageMin = Math.floor(ageMs / 60000);
+      const h = Math.floor(ageMin / 60);
+      const m = ageMin % 60;
+    
+      const ageText = h > 0 ? `${h}h ${m}m` : `${m}m`;
+    
+      return `
+    Model cycle: ${modelUTC}<br>
+    Effective wind time: ${effectiveTime.toUTCString()}<br>
+    Current time: ${nowUTC.toUTCString()}<br>
+    <b>Data age: ${ageText}</b>
+    `;
+    }
+    
     
     const overlays = {};   // for layer control
+
     
     function loadOutlineLayer(url, color, name) {
       return fetch(url)
@@ -545,11 +577,12 @@
       .then(f => {
         windLayer.setField(f);
     
-        // 🕒 Live update of data age display
         setInterval(() => {
-          if (!field || !field.modelTime) return;
+          document.getElementById("info").innerHTML = getWindTimeDiagnostics();
+        }, 60000);
     
           const ageText = getDataAgeText(field.modelTime);
+          document.getElementById("info").innerHTML = getWindTimeDiagnostics();
           document.getElementById("info").innerHTML = `
             Wind loaded<br>
             <b>${ageText}</b>
