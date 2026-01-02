@@ -573,26 +573,24 @@
 
 
     
+
     loadWind()
       .then(f => {
         windLayer.setField(f);
     
+        // Immediately show correct diagnostics
+        document.getElementById("info").innerHTML = getWindTimeDiagnostics();
+    
+        // Update diagnostics every minute
         setInterval(() => {
           document.getElementById("info").innerHTML = getWindTimeDiagnostics();
-        }, 60000);
-    
-          const ageText = getDataAgeText(field.modelTime);
-          document.getElementById("info").innerHTML = getWindTimeDiagnostics();
-          document.getElementById("info").innerHTML = `
-            Wind loaded<br>
-            <b>${ageText}</b>
-          `;
         }, 60000);
       })
       .catch(err => {
         document.getElementById("info").textContent = "ERROR: " + err.message;
         console.error(err);
       });
+
 
     
     // Reload wind data every hour on the hour
