@@ -519,21 +519,12 @@
       const speed = wind.speed;
       const arrow = getCompassArrow(dir);
     
-      const range = getBlendedTimeRange();
-      
-      let timeText = "Unknown time";
-      if (range) {
-        timeText = `
-          ${range.start.toLocaleString()}  
-          → ${range.end.toLocaleString()}
-          <br><i>Blend position: ${Math.round(windTime.a * 100)}%</i>
-        `;
-      }
+      const ageText = getDataAgeText(field.modelTime);
+
     
       const html = `
         <b>Wind at clicked point</b><br>
-        Valid time window:<br>
-        ${timeText}<br>
+        <b>${ageText}</b><br>
         Speed: ${speed.toFixed(2)} m/s<br>
         Direction: ${dir.toFixed(0)}° ${arrow}
       `;
