@@ -34,9 +34,12 @@ def pick_available_cycle(now=None):
         test_time = now - dt.timedelta(hours=hours_back)
         cycle = test_time.replace(hour=(test_time.hour // 6) * 6, minute=0, second=0, microsecond=0)
 
-        test_url = build_url(cycle, "UGRD_AGL-10m", 0)
-        if requests.head(test_url, timeout=15).status_code == 200:
-            return cycle
+        test_url = build_url(cycle, "UGRD_AGL-10m", 10, 0)
+        try:
+            if requests.head(test_url, timeout=15).status_code == 200:
+                return cycle
+        except Exception:
+            pass
 
     raise RuntimeError("No available HRDPS cycle found")
     
