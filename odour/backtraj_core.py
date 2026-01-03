@@ -1,5 +1,5 @@
-import os, re, json, gzip
-import math
+# backtraj_core_v2.py
+import os, re, json, gzip, math
 import datetime as dt
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional
@@ -15,8 +15,8 @@ EARTH_R = 6371000.0  # meters
 
 def parse_iso_z(s: str) -> dt.datetime:
     # expects "....Z"
-    s = s.replace("Z", "")
-    # Python can parse ISO without Z
+    if s.endswith("Z"):
+        s = s[:-1]
     return dt.datetime.fromisoformat(s)
 
 def clamp(x, a, b):
@@ -24,11 +24,7 @@ def clamp(x, a, b):
 
 def lon_wrap(lon):
     # keep [-180,180)
-    lon = (lon + 180.0) % 360.0 - 180.0
-    return lon
-
-def datetime_floor_to_hour(t: dt.datetime) -> dt.datetime:
-    return t.replace(minute=0, second=0, microsecond=0)
+    return (lon + 180.0) % 360.0 - 180.0
 
 
 # ---------------------------
@@ -46,20 +42,13 @@ class Grid:
 
     def ij_from_latlon(self, lat: float, lon: float) -> Tuple[float, float]:
         """
-        Earth-style grid:
+        Earth/Nullschool-style grid:
           i increases east from lo1
           j increases south from la1
         """
         i = (lon - self.lo1) / self.dx
         j = (self.la1 - lat) / self.dy
         return i, j
-
-    def bounds(self):
-        lon_min = self.lo1
-        lon_max = self.lo1 + self.dx * (self.nx - 1)
-        lat_max = self.la1
-        lat_min = self.la1 - self.dy * (self.ny - 1)
-        return lat_min, lat_max, lon_min, lon_max
 
 
 @dataclass
@@ -75,27 +64,21 @@ class MetSnapshot:
 # Met store (loads your *.json.gz)
 # ---------------------------
 
-class MetStore:
+class MetStoreV2:
     """
-    Expects each gz json to look like:
+    Expects your met files like:
     {
-      "meta": {"run": "...Z", "valid": "...Z", "lead": 6},
+      "meta": {"run": "...Z", "valid": "...Z", "lead": 0},
       "grid": {"lo1":..., "la1":..., "dx":..., "dy":..., "nx":..., "ny":...},
       "fields": {
-         "u10": [... ny*nx ...],
-         "v10": [...],
-         "u40": [...],
-         "v40": [...],
-         "u80": [...],
-         "v80": [...],
-         "u120":[...],
-         "v120":[...],
-         "hpbl":[...],   # meters
-         "rh2m":[...],   # %
-         "dpt2m":[...]   # K or C (doesn't matter for trajectories)
+         "ugrd10": [[[...]]],   # usually (1,ny,nx) or (ny,nx)
+         "vgrd10": [[[...]]],
+         ...
+         "hpbl":  [[[...]]],
+         "rh2m":  [[[...]]],
+         "dpt2m": [[[...]]]
       }
     }
-    Field names are flexible; we normalize a few common patterns.
     """
 
     def __init__(self, folder: str):
@@ -106,17 +89,66 @@ class MetStore:
         if not self.snaps:
             raise RuntimeError(f"No met files found in {folder}")
 
-        # ensure sorted by valid time
         self.snaps.sort(key=lambda s: s.valid)
+        # assume consistent grid
         self.grid = self.snaps[0].grid
 
     def _load_all(self):
         for fn in os.listdir(self.folder):
-            if not (fn.endswith(".json.gz") or fn.endswith(".json.gzip")):
+            if not fn.endswith(".json.gz"):
                 continue
             path = os.path.join(self.folder, fn)
-            snap = self._load_one(path)
-            self.snaps.append(snap)
+            self.snaps.append(self._load_one(path))
+
+    def _normalize_key(self, k: str) -> str:
+        kk = k.lower().strip()
+
+        # winds: ugrd10, vgrd40, etc -> u10, v40
+        m = re.match(r"^(u|v)grd\D*(10|40|80|120)\D*$", kk)
+        if m:
+            return f"{m.group(1)}{m.group(2)}"
+
+        # sometimes you might have "ugrd10m" etc
+        m2 = re.match(r"^(u|v)\D*(10|40|80|120)\D*$", kk)
+        if m2:
+            return f"{m2.group(1)}{m2.group(2)}"
+
+        # pbl height
+        if kk in ("hpbl", "pblh", "hpblsfc", "hpbl_sfc"):
+            return "hpbl"
+
+        # RH and dewpoint near-sfc
+        if kk in ("rh2m", "rh_2m", "rhagl2m"):
+            return "rh2m"
+        if kk in ("dpt2m", "dpt_2m", "td2m"):
+            return "dpt2m"
+
+        return kk
+
+    def _to_grid(self, arr, grid: Grid) -> np.ndarray:
+        """
+        Accepts arr shaped:
+          - (1,ny,nx)
+          - (ny,nx)
+          - (ny*nx,)
+        Returns (ny,nx) float32.
+        """
+        a = np.asarray(arr, dtype=np.float32)
+
+        # drop any leading singleton dims: (1,ny,nx) -> (ny,nx)
+        a = np.squeeze(a)
+
+        if a.ndim == 2:
+            if a.shape != (grid.ny, grid.nx):
+                raise ValueError(f"2D field shape mismatch: {a.shape} != {(grid.ny, grid.nx)}")
+            return a
+
+        if a.ndim == 1:
+            if a.size != grid.ny * grid.nx:
+                raise ValueError(f"1D field size mismatch: {a.size} != {grid.ny*grid.nx}")
+            return a.reshape((grid.ny, grid.nx))
+
+        raise ValueError(f"Unsupported field dims: ndim={a.ndim}, shape={a.shape}")
 
     def _load_one(self, path: str) -> MetSnapshot:
         with gzip.open(path, "rt", encoding="utf-8") as f:
@@ -135,57 +167,28 @@ class MetStore:
             ny=int(gridj["ny"])
         )
 
-        def to_grid(arr_1d):
-            a = np.array(arr_1d, dtype=np.float32)
-            if a.size != grid.nx * grid.ny:
-                raise ValueError(f"Grid size mismatch: got {a.size}, expected {grid.nx*grid.ny}")
-            return a.reshape((grid.ny, grid.nx))
-
-        # normalize keys (support a few variants)
-        norm = {}
+        norm_fields: Dict[str, np.ndarray] = {}
         for k, v in fieldsj.items():
-            kk = k.lower().strip()
-
-            # common normalizations
-            kk = kk.replace("ugrd", "u").replace("vgrd", "v")
-            kk = kk.replace("agl-", "")
-            kk = kk.replace("m", "m")  # no-op but keeps intent
-
-            # make canonical keys for winds
-            # accept u10, u10m, u_10, etc.
-            m = re.match(r"^(u|v)\D*(10|40|80|120)\D*$", kk)
-            if m:
-                kk = f"{m.group(1)}{m.group(2)}"
-            if kk in ("hpbl", "hpblsfc", "pblh", "hpbl_sfc"):
-                kk = "hpbl"
-            if kk in ("rh2m", "rh2", "rh_2m", "rhagl2m"):
-                kk = "rh2m"
-            if kk in ("dpt2m", "dpt2", "td2m", "dpt_2m", "dptagl2m"):
-                kk = "dpt2m"
-
-            norm[kk] = to_grid(v)
+            kk = self._normalize_key(k)
+            norm_fields[kk] = self._to_grid(v, grid)
 
         return MetSnapshot(
             valid=parse_iso_z(meta["valid"]),
             run=parse_iso_z(meta["run"]),
-            lead=int(meta.get("lead", meta.get("forecastTime", 0))),
+            lead=int(meta.get("lead", 0)),
             grid=grid,
-            fields=norm
+            fields=norm_fields
         )
 
+    # ----- sampling -----
+
     def _bracket(self, t: dt.datetime) -> Tuple[MetSnapshot, MetSnapshot, float]:
-        """
-        Find snapshots s0,s1 such that s0.valid <= t <= s1.valid.
-        Returns (s0,s1,alpha) where alpha in [0,1] for time interpolation.
-        If outside range, clamps to ends (alpha=0).
-        """
         snaps = self.snaps
         if t <= snaps[0].valid:
             return snaps[0], snaps[0], 0.0
         if t >= snaps[-1].valid:
             return snaps[-1], snaps[-1], 0.0
 
-        # binary search
         lo, hi = 0, len(snaps) - 1
         while lo + 1 < hi:
             mid = (lo + hi) // 2
@@ -196,14 +199,13 @@ class MetStore:
 
         s0, s1 = snaps[lo], snaps[hi]
         dt_total = (s1.valid - s0.valid).total_seconds()
-        alpha = 0.0 if dt_total <= 0 else (t - s0.valid).total_seconds() / dt_total
-        alpha = clamp(alpha, 0.0, 1.0)
-        return s0, s1, alpha
+        a = 0.0 if dt_total <= 0 else (t - s0.valid).total_seconds() / dt_total
+        return s0, s1, float(clamp(a, 0.0, 1.0))
 
     def _bilinear(self, grid: Grid, field: np.ndarray, lat: float, lon: float) -> float:
         i, j = grid.ij_from_latlon(lat, lon)
 
-        # clamp inside grid cell range
+        # clamp inside grid
         i = clamp(i, 0.0, grid.nx - 1.000001)
         j = clamp(j, 0.0, grid.ny - 1.000001)
 
@@ -226,36 +228,34 @@ class MetStore:
 
     def sample(self, t: dt.datetime, lat: float, lon: float, z_m: float) -> Dict[str, float]:
         """
-        Returns sampled met at (t,lat,lon,z).
-        Winds are returned as u,v in m/s for nearest AGL layer among 10/40/80/120.
-        Also returns hpbl (m) if available.
+        Sample met at (t,lat,lon,z).
+        Returns u,v (m/s) at nearest layer among 10/40/80/120 plus hpbl if present.
         """
         s0, s1, a = self._bracket(t)
         g = s0.grid
 
-        # choose nearest vertical layer
         layers = np.array([10, 40, 80, 120], dtype=float)
         zpick = int(layers[np.argmin(np.abs(layers - z_m))])
 
         ukey = f"u{zpick}"
         vkey = f"v{zpick}"
 
-        def interp_key(key: str) -> Optional[float]:
+        def interp(key: str) -> Optional[float]:
             if key not in s0.fields or key not in s1.fields:
                 return None
             v0 = self._bilinear(g, s0.fields[key], lat, lon)
             v1 = self._bilinear(g, s1.fields[key], lat, lon)
             return v0 * (1 - a) + v1 * a
 
-        u = interp_key(ukey)
-        v = interp_key(vkey)
-        hpbl = interp_key("hpbl")
+        u = interp(ukey)
+        v = interp(vkey)
+        hpbl = interp("hpbl")
 
         if u is None or v is None:
-            raise KeyError(f"Missing wind fields for layer {zpick}m: need {ukey},{vkey}")
+            raise KeyError(f"Missing winds: need {ukey} and {vkey}")
 
         out = {"u": float(u), "v": float(v), "zlayer": float(zpick)}
-        if hpbl is not None:
+        if hpbl is not None and np.isfinite(hpbl):
             out["hpbl"] = float(hpbl)
         return out
 
@@ -279,70 +279,59 @@ def advect_latlon(lat: float, lon: float, u: float, v: float, dt_s: float) -> Tu
     dlon = (u * dt_s) / (EARTH_R * max(1e-8, math.cos(lat_rad))) * (180.0 / math.pi)
     return lat + dlat, lon_wrap(lon + dlon)
 
-
 def run_back_trajectories(
-    met: MetStore,
+    met: MetStoreV2,
     start_lat: float,
     start_lon: float,
     start_time_utc: dt.datetime,
     hours: float = 5.0,
     dt_s: int = 60,
     n_particles: int = 200,
-    start_heights_m: List[float] = (10.0, 40.0, 80.0),
-    horiz_sigma_ms: float = 0.35,   # random wind perturbation (m/s)
-    vert_sigma_ms: float = 0.10,    # vertical random walk (m/s equivalent)
-    use_pbl_cap: bool = True
+    start_heights_m: Tuple[float, ...] = (10.0, 40.0, 80.0),
+    horiz_sigma_ms: float = 0.35,
+    vert_sigma_ms: float = 0.10,
+    use_pbl_cap: bool = True,
+    seed: int = 12345
 ):
     """
     Backward Lagrangian ensemble:
-      - integrates from start_time_utc backward for 'hours'
-      - uses simple stochastic perturbations to represent uncertainty
-      - returns centerlines and particle cloud
-
-    Notes:
-      - Backward integration is done by flipping wind sign (u,v -> -u,-v).
-      - We do RK2 (midpoint) for better stability than Euler.
-      - Vertical motion: no resolved w, so we random-walk z with optional PBL cap.
+      - integrate from start_time_utc backward for 'hours'
+      - RK2 midpoint
+      - stochastic u/v perturbations to represent uncertainty
+      - vertical random-walk with optional PBL cap
     """
     n_steps = int((hours * 3600) // dt_s)
-    t0 = start_time_utc
+    rng = np.random.default_rng(seed)
 
-    rng = np.random.default_rng(12345)
-
-    # outputs
-    centerlines = []  # list of dicts: {"z0":..., "track":[(t,lat,lon,z),...]}
-    cloud_points = [] # list of (t,lat,lon,z)
+    centerlines = []
+    cloud_points = []
 
     for z0 in start_heights_m:
-        # initialize particles
         parts = [ParticleState(start_lat, start_lon, float(z0)) for _ in range(n_particles)]
         track_center = []
 
         for k in range(n_steps + 1):
-            t = t0 - dt.timedelta(seconds=k * dt_s)
+            t = start_time_utc - dt.timedelta(seconds=k * dt_s)
 
-            # record center
             lat_c = float(np.mean([p.lat for p in parts]))
             lon_c = float(np.mean([p.lon for p in parts]))
             z_c   = float(np.mean([p.z_m for p in parts]))
             track_center.append((t, lat_c, lon_c, z_c))
 
-            # record cloud (downsample to keep size reasonable)
+            # cloud downsample
             if k % 5 == 0:
                 for p in parts:
                     cloud_points.append((t, p.lat, p.lon, p.z_m))
 
-            # step particles backward (skip stepping at final record)
             if k == n_steps:
                 break
 
             for p in parts:
-                # --- RK2 midpoint step ---
+                # RK2 midpoint (backward => negate winds)
                 m1 = met.sample(t, p.lat, p.lon, p.z_m)
                 u1 = -m1["u"] + rng.normal(0, horiz_sigma_ms)
                 v1 = -m1["v"] + rng.normal(0, horiz_sigma_ms)
 
-                # midpoint prediction
                 lat_mid, lon_mid = advect_latlon(p.lat, p.lon, u1, v1, dt_s * 0.5)
 
                 m2 = met.sample(t - dt.timedelta(seconds=dt_s * 0.5), lat_mid, lon_mid, p.z_m)
@@ -351,17 +340,15 @@ def run_back_trajectories(
 
                 lat_new, lon_new = advect_latlon(p.lat, p.lon, u2, v2, dt_s)
 
-                # vertical random walk (simple)
-                z_new = p.z_m + rng.normal(0.0, vert_sigma_ms) * dt_s  # meters-ish
+                # vertical random walk (meters-ish)
+                z_new = p.z_m + rng.normal(0.0, vert_sigma_ms) * dt_s
 
-                # apply PBL cap if available
                 if use_pbl_cap and "hpbl" in m2 and np.isfinite(m2["hpbl"]):
                     hpbl = max(20.0, float(m2["hpbl"]))
                     z_new = clamp(z_new, 2.0, hpbl)
                 else:
                     z_new = clamp(z_new, 2.0, 500.0)
 
-                # update
                 p.lat, p.lon, p.z_m = lat_new, lon_new, z_new
 
         centerlines.append({"z0": float(z0), "track": track_center})
@@ -370,7 +357,7 @@ def run_back_trajectories(
 
 
 # ---------------------------
-# GeoJSON writers (optional)
+# GeoJSON writers
 # ---------------------------
 
 def centerlines_to_geojson(centerlines):
@@ -395,3 +382,36 @@ def cloud_to_geojson(cloud_points, every_n: int = 1):
             "geometry": {"type": "Point", "coordinates": [float(lon), float(lat)]}
         })
     return {"type": "FeatureCollection", "features": feats}
+
+
+# ---------------------------
+# Minimal test runner
+# ---------------------------
+
+if __name__ == "__main__":
+    met = MetStoreV2("met_data")
+    print("Loaded snapshots:", len(met.snaps))
+    print("Time range:", met.snaps[0].valid, "to", met.snaps[-1].valid)
+
+    # example start (change these)
+    start_lat = 53.5461
+    start_lon = -113.4938
+    start_time = met.snaps[0].valid  # for a quick test, use first valid
+
+    centers, cloud = run_back_trajectories(
+        met,
+        start_lat=start_lat,
+        start_lon=start_lon,
+        start_time_utc=start_time,
+        hours=5.0,
+        dt_s=60,
+        n_particles=150
+    )
+
+    with open("backtraj_centerlines.geojson", "w", encoding="utf-8") as f:
+        json.dump(centerlines_to_geojson(centers), f)
+
+    with open("backtraj_cloud.geojson", "w", encoding="utf-8") as f:
+        json.dump(cloud_to_geojson(cloud, every_n=5), f)
+
+    print("Wrote backtraj_centerlines.geojson and backtraj_cloud.geojson")
