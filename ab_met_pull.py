@@ -63,6 +63,28 @@ def main():
                 ds = xr.open_dataset(tmp, engine="cfgrib")
                 sub = crop(ds)
 
+                
+                lats = sub.latitude.values
+                lons = sub.longitude.values
+                lons = np.where(lons > 180, lons - 360, lons)
+                
+                ny, nx = lats.shape if lats.ndim == 2 else (len(lats), len(lons))
+                
+                lat_max = float(np.nanmax(lats))
+                lon_min = float(np.nanmin(lons))
+                
+                dx = float((np.nanmax(lons) - np.nanmin(lons)) / (nx - 1))
+                dy = float((lat_max - float(np.nanmin(lats))) / (ny - 1))
+                
+                grid = {
+                    "lo1": lon_min,
+                    "la1": lat_max,
+                    "dx": dx,
+                    "dy": dy,
+                    "nx": nx,
+                    "ny": ny
+                }                
+
                 key = f"{var.lower()}{lvl.replace('AGL-','').replace('m','')}"
                 fields_out[key] = sub.to_array().values.astype("float32").tolist()
 
@@ -74,6 +96,7 @@ def main():
                 "lead": lead,
                 "valid": (run + dt.timedelta(hours=lead)).isoformat()+"Z"
             },
+            "grid": grid,
             "fields": fields_out
         }
 
