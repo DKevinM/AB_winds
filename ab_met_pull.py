@@ -29,19 +29,23 @@ def pick_available_cycle(now=None):
     if now is None:
         now = dt.datetime.utcnow()
 
-    # candidate cycles in descending order
-    for hours_back in [0, 6, 12, 18, 24]:
-        test_time = now - dt.timedelta(hours=hours_back)
-        cycle = test_time.replace(hour=(test_time.hour // 6) * 6, minute=0, second=0, microsecond=0)
+    # Try up to 48 hours back, stepping 3 hours at a time
+    for h in range(0, 49, 3):
+        test_time = now - dt.timedelta(hours=h)
+        cycle_hour = (test_time.hour // 6) * 6
+        cycle = test_time.replace(hour=cycle_hour, minute=0, second=0, microsecond=0)
 
-        test_url = build_url(cycle, "UGRD_AGL-10m", 10, 0)
         try:
-            if requests.head(test_url, timeout=15).status_code == 200:
+            test_url = build_url(cycle, "UGRD_AGL-10m", 10, 0)
+            r = requests.head(test_url, timeout=15)
+            if r.status_code == 200:
+                print("Found available HRDPS cycle:", cycle.isoformat())
                 return cycle
         except Exception:
-            pass
+            continue
 
-    raise RuntimeError("No available HRDPS cycle found")
+    raise RuntimeError("No available HRDPS cycle found after 48h search")
+
     
 
 def build_url(run, var, level, lead):
