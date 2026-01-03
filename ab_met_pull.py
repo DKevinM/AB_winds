@@ -24,10 +24,22 @@ LEADS = [0,3,6,9,12,15,18,21,24]
 OUTDIR = "met_data"
 
 # ========================================
+    
+def pick_available_cycle(now=None):
+    if now is None:
+        now = dt.datetime.utcnow()
 
-def pick_cycle():
-    now = dt.datetime.utcnow()
-    return now.replace(hour=(now.hour//6)*6, minute=0, second=0, microsecond=0)
+    # candidate cycles in descending order
+    for hours_back in [0, 6, 12, 18, 24]:
+        test_time = now - dt.timedelta(hours=hours_back)
+        cycle = test_time.replace(hour=(test_time.hour // 6) * 6, minute=0, second=0, microsecond=0)
+
+        test_url = build_url(cycle, "UGRD_AGL-10m", 0)
+        if requests.head(test_url, timeout=15).status_code == 200:
+            return cycle
+
+    raise RuntimeError("No available HRDPS cycle found")
+    
 
 def build_url(run, var, level, lead):
     tag = run.strftime("%Y%m%dT%HZ")
@@ -48,7 +60,9 @@ def crop(ds):
     return ds.where(mask, drop=True)
 
 def main():
-    run = pick_cycle()
+    run = pick_available_cycle()
+    print("Using HRDPS cycle:", run.isoformat())
+    
     os.makedirs(OUTDIR, exist_ok=True)
 
     for lead in LEADS:
