@@ -1,0 +1,37 @@
+name: Alberta Meteorology Pull
+
+on:
+  schedule:
+    # Every 3 hours
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+
+jobs:
+  pull-meteorology:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install xarray cfgrib numpy requests netcdf4 eccodes
+
+      - name: Run meteorology pull
+        run: |
+          python ab_met_pull.py
+
+      - name: Commit & push updated data
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git add data/
+          git commit -m "Update Alberta meteorology data" || echo "No changes"
+          git push
