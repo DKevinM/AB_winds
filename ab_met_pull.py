@@ -29,22 +29,23 @@ def pick_available_cycle(now=None):
     if now is None:
         now = dt.datetime.utcnow()
 
-    # Try up to 48 hours back, stepping 3 hours at a time
     for h in range(0, 49, 3):
         test_time = now - dt.timedelta(hours=h)
         cycle_hour = (test_time.hour // 6) * 6
         cycle = test_time.replace(hour=cycle_hour, minute=0, second=0, microsecond=0)
 
+        cycle_dir = f"{BASE}/{cycle:%H}/000/"
         try:
-            test_url = build_url(cycle, "UGRD_AGL-10m", 10, 0)
-            r = requests.head(test_url, timeout=15)
-            if r.status_code == 200:
-                print("Found available HRDPS cycle:", cycle.isoformat())
-                return cycle
+            html = requests.get(cycle_dir, timeout=15).text
         except Exception:
             continue
 
-    raise RuntimeError("No available HRDPS cycle found after 48h search")
+        if "UGRD_AGL-10m" in html:
+            print("Found available HRDPS cycle:", cycle.isoformat())
+            return cycle
+
+    raise RuntimeError("No available HRDPS cycle found")
+
 
     
 
