@@ -6,6 +6,9 @@ on:
     - cron: "0 */3 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   pull-meteorology:
     runs-on: ubuntu-latest
@@ -28,10 +31,11 @@ jobs:
         run: |
           python ab_met_pull.py
 
-      - name: Commit & push updated data
+      - name: Commit data
         run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "actions@github.com"
-          git add data/
-          git commit -m "Update Alberta meteorology data" || echo "No changes"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add met_data
+          git commit -m "Update HRDPS meteorology data" || echo "No changes"
           git push
+
