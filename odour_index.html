@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Odour Index — Back Trajectory Tool</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    body { margin: 0; font-family: Arial; background: #111; color: #eee; }
+    #map { height: 80vh; }
+    #panel {
+      padding: 10px;
+      background: #1b1b1b;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    input, button {
+      padding: 6px;
+      font-size: 14px;
+    }
+    button { cursor: pointer; }
+  </style>
+</head>
+
+<body>
+
+<div id="panel">
+  <b>Odour Index</b>
+  Time (UTC):
+  <input id="time" type="datetime-local">
+  Hours:
+  <input id="hours" type="number" value="4" min="1" max="12">
+  <button onclick="runModel()">Run Odour Model</button>
+  <span id="status"></span>
+</div>
+
+<div id="map"></div>
+
+<script>
+let selectedPoint = null;
+
+const map = L.map('map').setView([53.54, -113.49], 7);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  maxZoom: 18
+}).addTo(map);
+
+let marker;
+
+map.on('click', e => {
+  selectedPoint = e.latlng;
+  if (marker) map.removeLayer(marker);
+  marker = L.marker(e.latlng).addTo(map);
+});
+
+function runModel(){
+  if (!selectedPoint){
+    alert("Click on the map first.");
+    return;
+  }
+
+  const time = document.getElementById("time").value;
+  const hours = document.getElementById("hours").value;
+
+  if (!time){
+    alert("Enter a UTC time.");
+    return;
+  }
+
+  const payload = {
+    ref: "main",
+    inputs: {
+      latitude: selectedPoint.lat.toFixed(6),
+      longitude: selectedPoint.lng.toFixed(6),
+      time_utc: time,
+      hours: hours
+    }
+  };
+
+  document.getElementById("status").innerText = "Running model…";
+
+  fetch("https://api.github.com/repos/DKevInM/AB_winds/actions/workflows/odour_index.yml/dispatches", {
+    method: "POST",
+    headers: {
+      "Authorization": "token YOUR_GITHUB_TOKEN_HERE",
+      "Accept": "application/vnd.github+json"
+    },
+    body: JSON.stringify(payload)
+  })
+  .then(res => {
+    if (res.status === 204){
+      document.getElementById("status").innerText = "Model started ✔";
+    } else {
+      document.getElementById("status").innerText = "Error launching model";
+    }
+  });
+}
+</script>
+
+</body>
+</html>
