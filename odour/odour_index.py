@@ -73,9 +73,12 @@ def run_odour_index(
 
 # ========== CLI Test Runner ==========
 if __name__ == "__main__":
-    # Example: Edmonton test point
-    test_lat = 53.5444
-    test_lon = -113.4909
-    test_time = dt.datetime.utcnow()
+    import os
 
-    run_odour_index(test_lat, test_lon, test_time)
+    lat = float(os.environ["LAT"])
+    lon = float(os.environ["LON"])
+    time_utc = dt.datetime.fromisoformat(os.environ["TIME_UTC"])
+    hours = float(os.environ["HOURS"])
+
+    run_odour_index(lat, lon, time_utc, hours)
+
