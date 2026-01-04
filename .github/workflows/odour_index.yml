@@ -2,6 +2,23 @@ name: Run Odour Index
 
 on:
   workflow_dispatch:
+    inputs:
+      latitude:
+        description: "Latitude"
+        required: true
+        default: "53.5444"
+      longitude:
+        description: "Longitude"
+        required: true
+        default: "-113.4909"
+      time_utc:
+        description: "UTC time (YYYY-MM-DDTHH:MM)"
+        required: true
+        default: "2026-01-03T18:00"
+      hours:
+        description: "Hours backward"
+        required: true
+        default: "4"
 
 jobs:
   odour:
@@ -20,6 +37,11 @@ jobs:
         pip install numpy xarray cfgrib requests
 
     - name: Run odour index
+      env:
+        LAT: ${{ github.event.inputs.latitude }}
+        LON: ${{ github.event.inputs.longitude }}
+        TIME_UTC: ${{ github.event.inputs.time_utc }}
+        HOURS: ${{ github.event.inputs.hours }}
       run: |
         python odour_index.py
 
