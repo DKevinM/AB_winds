@@ -90,7 +90,7 @@ function runModel(){
   fetch("https://api.github.com/repos/DKevInM/AB_winds/actions/workflows/odour_index.yml/dispatches", {
     method: "POST",
     headers: {
-      "Authorization": "token YOUR_GITHUB_TOKEN_HERE",
+      "Authorization": ODOUR_TRIGGER_TOKEN,
       "Accept": "application/vnd.github+json"
     },
     body: JSON.stringify(payload)
