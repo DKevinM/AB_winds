@@ -38,6 +38,7 @@ jobs:
 
     - name: Run odour index
       env:
+        GH_TOKEN: ${{ secrets.ODOUR_TRIGGER_TOKEN }}
         LAT: ${{ github.event.inputs.latitude }}
         LON: ${{ github.event.inputs.longitude }}
         TIME_UTC: ${{ github.event.inputs.time_utc }}
