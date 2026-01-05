@@ -40,31 +40,6 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <script type="module">
-  import { runOdour } from "https://raw.githubusercontent.com/DKevinM/odour_control/main/trigger.js";
-  
-  window.runModel = async function(){
-  
-    if (!selectedPoint){
-      alert("Click on the map first.");
-      return;
-    }
-  
-    const time = document.getElementById("time").value;
-    const hours = document.getElementById("hours").value;
-  
-    document.getElementById("status").innerText = "Starting model…";
-  
-    await runOdour(
-      selectedPoint.lat.toFixed(6),
-      selectedPoint.lng.toFixed(6),
-      time,
-      hours
-    );
-  
-    document.getElementById("status").innerText = "Model started — computing…";
-  };
-  </script>
 
 
   <script>
@@ -549,52 +524,12 @@
     const windLayer = new WindLayer();
     windLayer.addTo(map);
     
-
-    function runModel(){
-    
-      if (!selectedPoint){
-        alert("Click on the map first.");
-        return;
-      }
-    
-      const time = document.getElementById("time").value;
-      const hours = document.getElementById("hours").value;
-    
-      if (!time){
-        alert("Enter a UTC time.");
-        return;
-      }
-    
-      document.getElementById("status").innerText = "Starting model…";
-    
-      fetch("https://api.github.com/repos/DKevinM/AB_winds/actions/workflows/odour_index.yml/dispatches", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${window.GITHUB_TOKEN}`,
-          "Accept": "application/vnd.github+json",
-          "Content-Type": "application/json",
-          "User-Agent": "Odour-Map"
-        },
-        body: JSON.stringify({
-          ref: "main",
-          inputs: {
-            lat: selectedPoint.lat.toFixed(6),
-            lon: selectedPoint.lng.toFixed(6),
-            time_utc: time,
-            hours_back: String(hours)
-          }
-        })
-      })
-      .then(res => {
-        if (!res.ok) throw new Error("Dispatch failed");
-        document.getElementById("status").innerText = "Model started — computing…";
-      })
-      .catch(err => {
-        console.error(err);
-        document.getElementById("status").innerText = "Error starting model";
+    fetch("data/Alberta.geojson")
+      .then(r => r.json())
+      .then(gj => {
+        windLayer.setMask(gj);
+        windLayer._updateMaskPath();  
       });
-    }
-
     
 
     function getCompassArrow(deg) {
