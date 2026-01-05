@@ -1,0 +1,26 @@
+name: Odour HTTP Gateway
+
+on:
+  repository_dispatch:
+    types: [odour_request]
+
+jobs:
+  forward:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const d = context.payload.client_payload;
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: "odour_index.yml",
+              ref: "main",
+              inputs: {
+                latitude: d.lat,
+                longitude: d.lon,
+                time_utc: d.time,
+                hours: d.hours
+              }
+            })
