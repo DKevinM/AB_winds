@@ -360,7 +360,7 @@ def run_back_trajectories(
 # GeoJSON writers
 # ---------------------------
 
-def centerlines_to_geojson(centerlines):
+def centerlines_geojson(centerlines):
     feats = []
     for c in centerlines:
         coords = [[lon, lat] for (t, lat, lon, z) in c["track"]]
@@ -371,7 +371,7 @@ def centerlines_to_geojson(centerlines):
         })
     return {"type": "FeatureCollection", "features": feats}
 
-def cloud_to_geojson(cloud_points, every_n: int = 1):
+def cloud_geojson(cloud_points, every_n: int = 1):
     feats = []
     for idx, (t, lat, lon, z) in enumerate(cloud_points):
         if every_n > 1 and (idx % every_n) != 0:
