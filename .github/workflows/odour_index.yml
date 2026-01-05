@@ -2,6 +2,7 @@ name: Run Odour Index
 
 permissions:
   contents: write
+  actions: write
 
 on:
   workflow_dispatch:
@@ -14,11 +15,11 @@ on:
         description: "Longitude"
         required: true
         default: "-113.4909"
-      time_utc:
+      time:
         description: "UTC time (YYYY-MM-DDTHH:MM)"
         required: true
         default: "2026-01-03T18:00"
-      hours_back:
+      hours:
         description: "Hours backward"
         required: true
         default: "4"
@@ -42,10 +43,11 @@ jobs:
 
     - name: Run back-trajectory model
       env:
+        ODOUR_TOKEN: ${{ secrets.ODOUR_TRIGGER_TOKEN }}
         LAT: ${{ inputs.lat }}
         LON: ${{ inputs.lon }}
-        TIME_UTC: ${{ inputs.time_utc }}
-        HOURS: ${{ inputs.hours_back }}
+        TIME_UTC: ${{ inputs.time }}
+        HOURS: ${{ inputs.hours }}
       run: |
         python odour/backtraj_core.py
 
