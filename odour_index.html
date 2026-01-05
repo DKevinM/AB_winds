@@ -44,25 +44,31 @@
 
 <div id="map"></div>
 
-<script>
+<script type="module">
+import { runOdour } from "https://raw.githubusercontent.com/DKevinM/odour_control/main/trigger.js";
+
 let selectedPoint = null;
 
 const map = L.map('map').setView([53.54, -113.49], 7);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
 let marker;
 
-map.on('click', e => {
+map.on('click', (e) => {
   selectedPoint = e.latlng;
+
   if (marker) map.removeLayer(marker);
   marker = L.marker(e.latlng).addTo(map);
+
+  document.getElementById("status").innerText =
+    `Selected: ${selectedPoint.lat.toFixed(5)}, ${selectedPoint.lng.toFixed(5)}`;
 });
 
-function runModel(){
-  if (!selectedPoint){
+window.runModel = async function () {
+  if (!selectedPoint) {
     alert("Click on the map first.");
     return;
   }
@@ -70,42 +76,29 @@ function runModel(){
   const time = document.getElementById("time").value;
   const hours = document.getElementById("hours").value;
 
-  if (!time){
+  if (!time) {
     alert("Enter a UTC time.");
     return;
   }
 
-  const payload = {
-    ref: "main",
-    inputs: {
-      latitude: selectedPoint.lat.toFixed(6),
-      longitude: selectedPoint.lng.toFixed(6),
-      time_utc: time,
-      hours: hours
-    }
-  };
+  const statusEl = document.getElementById("status");
+  statusEl.innerText = "Starting model…";
 
-  document.getElementById("status").innerText = "Running model…";
+  try {
+    await runOdour(
+      selectedPoint.lat.toFixed(6),
+      selectedPoint.lng.toFixed(6),
+      time,
+      hours
+    );
 
-
-  fetch("https://odour-trigger.kevin-010.workers.dev", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      lat: selectedPoint.lat,
-      lon: selectedPoint.lng,
-      start_time: document.getElementById("time").value,
-      hours_back: document.getElementById("hours").value
-    })
-  })
-  .then(() => {
-    document.getElementById("status").innerText = "Model started";
-  })
-  .catch(err => {
-    document.getElementById("status").innerText = "Error: " + err;
-  });
-
-}
+    statusEl.innerText = "Triggered. Check GitHub Actions for progress.";
+  } catch (err) {
+    console.error(err);
+    statusEl.innerText = "Error triggering model (see console).";
+    alert("Trigger failed. Open DevTools console for details.");
+  }
+};
 </script>
 
 </body>
