@@ -360,7 +360,7 @@ def run_back_trajectories(
 # GeoJSON writers
 # ---------------------------
 
-def centerlines_geojson(centerlines):
+def centerlines_to_geojson(centerlines):
     feats = []
     for c in centerlines:
         coords = [[lon, lat] for (t, lat, lon, z) in c["track"]]
@@ -371,7 +371,7 @@ def centerlines_geojson(centerlines):
         })
     return {"type": "FeatureCollection", "features": feats}
 
-def cloud_geojson(cloud_points, every_n: int = 1):
+def cloud_to_geojson(cloud_points, every_n: int = 1):
     feats = []
     for idx, (t, lat, lon, z) in enumerate(cloud_points):
         if every_n > 1 and (idx % every_n) != 0:
@@ -412,12 +412,15 @@ if __name__ == "__main__":
     
     outdir = Path("odour_data")
     outdir.mkdir(parents=True, exist_ok=True)
+    # build actual GeoJSON dicts
+    centers_gj = centerlines_geojson(centers)
+    cloud_gj   = cloud_geojson(cloud, every_n=3)
     
     with open(outdir / "backtraj_centerlines.geojson", "w", encoding="utf-8") as f:
-        json.dump(centerlines_geojson, f)
+        json.dump(centers_gj, f)
     
     with open(outdir / "backtraj_cloud.geojson", "w", encoding="utf-8") as f:
-        json.dump(cloud_geojson, f)
+        json.dump(cloud_gj, f)
 
 
     print("Wrote backtraj_centerlines.geojson and backtraj_cloud.geojson")
