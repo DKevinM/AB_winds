@@ -1,23 +1,24 @@
 name: Run Odour Index
 permissions:
   contents: write
+  actions: write
 
 on:
   workflow_dispatch:
     inputs:
-      latitude:
+      lat:
         description: "Latitude"
         required: true
         default: "53.5444"
-      longitude:
+      lon:
         description: "Longitude"
         required: true
         default: "-113.4909"
-      time_utc:
+      start_time:
         description: "UTC time (YYYY-MM-DDTHH:MM)"
         required: true
         default: "2026-01-03T18:00"
-      hours:
+      hours_back:
         description: "Hours backward"
         required: true
         default: "4"
@@ -41,10 +42,10 @@ jobs:
     - name: Run odour index
       env:
         GH_TOKEN: ${{ secrets.ODOUR_TRIGGER_TOKEN }}
-        LAT: ${{ github.event.inputs.latitude }}
-        LON: ${{ github.event.inputs.longitude }}
-        TIME_UTC: ${{ github.event.inputs.time_utc }}
-        HOURS: ${{ github.event.inputs.hours }}
+        LAT: ${{ github.event.inputs.lat }}
+        LON: ${{ github.event.inputs.lon }}
+        TIME_UTC: ${{ github.event.inputs.start_time }}
+        HOURS: ${{ github.event.inputs.hours_back }}
       run: |
         python odour/backtraj_core.py
 
