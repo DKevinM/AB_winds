@@ -7,13 +7,13 @@ from pathlib import Path
 from backtraj_core import (
     MetStore,
     run_back_trajectories,
-    centerlines_to_geojson,
-    cloud_to_geojson
+    centerlines_geojson,
+    cloud_geojson
 )
 
 # ================= CONFIG =================
 MET_FOLDER = "met_data"
-OUTPUT_FOLDER = "odour_output"
+OUTPUT_FOLDER = "odour_data"
 
 DEFAULT_BACK_HOURS = 4.0
 DEFAULT_DT = 60
@@ -48,8 +48,8 @@ def run_odour_index(
     )
 
     print("Converting to GeoJSON...")
-    center_geo = centerlines_to_geojson(centerlines)
-    cloud_geo = cloud_to_geojson(cloud, every_n=3)
+    center_geo = centerlines_geojson(centerlines)
+    cloud_geo = cloud_geojson(cloud, every_n=3)
 
     Path(OUTPUT_FOLDER).mkdir(exist_ok=True)
 
