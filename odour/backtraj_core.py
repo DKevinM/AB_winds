@@ -408,10 +408,13 @@ if __name__ == "__main__":
         n_particles=150
     )
 
-    with open("backtraj_centerlines.geojson", "w", encoding="utf-8") as f:
-        json.dump(centerlines_to_geojson(centers), f)
+    os.makedirs("odour_data", exist_ok=True)
+    
+    with open("odour_data/backtraj_centerlines.geojson", "w") as f:
+        json.dump(centerlines_geojson, f)
+    
+    with open("odour_data/backtraj_cloud.geojson", "w") as f:
+        json.dump(cloud_geojson, f)
 
-    with open("backtraj_cloud.geojson", "w", encoding="utf-8") as f:
-        json.dump(cloud_to_geojson(cloud, every_n=5), f)
 
     print("Wrote backtraj_centerlines.geojson and backtraj_cloud.geojson")
