@@ -408,13 +408,16 @@ if __name__ == "__main__":
         n_particles=150
     )
 
-    os.makedirs("odour_data", exist_ok=True)
+    from pathlib import Path
     
-    with open("odour_data/backtraj_centerlines.geojson", "w") as f:
-        json.dump("odour_data/backtraj_centerlines_geojson", f)
+    outdir = Path("odour_data")
+    outdir.mkdir(parents=True, exist_ok=True)
     
-    with open("odour_data/backtraj_cloud.geojson", "w") as f:
-        json.dump("odour_data/backtraj_cloud_geojson", f)
+    with open(outdir / "backtraj_centerlines.geojson", "w", encoding="utf-8") as f:
+        json.dump(centerlines_geojson, f)
+    
+    with open(outdir / "backtraj_cloud.geojson", "w", encoding="utf-8") as f:
+        json.dump(cloud_geojson, f)
 
 
     print("Wrote backtraj_centerlines.geojson and backtraj_cloud.geojson")
