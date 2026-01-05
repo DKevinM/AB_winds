@@ -44,7 +44,7 @@ jobs:
         TIME_UTC: ${{ github.event.inputs.time_utc }}
         HOURS: ${{ github.event.inputs.hours }}
       run: |
-        python odour_index.py
+        python odour/backtraj_core.py
 
     - name: Commit results
       run: |
