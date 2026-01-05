@@ -1,0 +1,34 @@
+name: Odour Trigger API
+
+on:
+  workflow_dispatch:
+    inputs:
+      latitude:
+        required: true
+      longitude:
+        required: true
+      time_utc:
+        required: true
+      hours:
+        required: true
+
+jobs:
+  forward:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger main odour job
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: "odour_index.yml",
+              ref: "main",
+              inputs: {
+                lat: "${{ github.event.inputs.latitude }}",
+                lon: "${{ github.event.inputs.longitude }}",
+                time: "${{ github.event.inputs.time_utc }}",
+                hours: "${{ github.event.inputs.hours }}"
+              }
+            })
