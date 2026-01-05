@@ -41,9 +41,31 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script type="module">
-  import { GITHUB_TOKEN } from "./config.js";
-  window.GITHUB_TOKEN = GITHUB_TOKEN;
+  import { runOdour } from "https://raw.githubusercontent.com/DKevinM/odour_control/main/trigger.js";
+  
+  window.runModel = async function(){
+  
+    if (!selectedPoint){
+      alert("Click on the map first.");
+      return;
+    }
+  
+    const time = document.getElementById("time").value;
+    const hours = document.getElementById("hours").value;
+  
+    document.getElementById("status").innerText = "Starting model…";
+  
+    await runOdour(
+      selectedPoint.lat.toFixed(6),
+      selectedPoint.lng.toFixed(6),
+      time,
+      hours
+    );
+  
+    document.getElementById("status").innerText = "Model started — computing…";
+  };
   </script>
+
 
   <script>
     let field = null;
