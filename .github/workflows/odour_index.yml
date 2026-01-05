@@ -1,4 +1,6 @@
 name: Run Odour Index
+permissions:
+  contents: write
 
 on:
   workflow_dispatch:
@@ -50,6 +52,6 @@ jobs:
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add data/
-        git commit -m "Run odour index" || echo "No changes to commit"
+        git add backtraj_centerlines.geojson backtraj_cloud.geojson
+        git commit -m "Update back trajectory outputs" || echo "No changes to commit"
         git push
