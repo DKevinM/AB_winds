@@ -3,11 +3,11 @@ name: Odour Trigger API
 on:
   workflow_dispatch:
     inputs:
-      latitude:
+      lat:
         required: true
-      longitude:
+      lon:
         required: true
-      time_utc:
+      time:
         required: true
       hours:
         required: true
@@ -26,9 +26,9 @@ jobs:
               workflow_id: "odour_index.yml",
               ref: "main",
               inputs: {
-                lat: "${{ github.event.inputs.latitude }}",
-                lon: "${{ github.event.inputs.longitude }}",
-                time: "${{ github.event.inputs.time_utc }}",
+                lat: "${{ github.event.inputs.lat }}",
+                lon: "${{ github.event.inputs.lon }}",
+                time: "${{ github.event.inputs.time }}",
                 hours: "${{ github.event.inputs.hours }}"
               }
             })
