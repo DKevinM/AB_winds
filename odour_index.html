@@ -87,20 +87,24 @@ function runModel(){
 
   document.getElementById("status").innerText = "Running model…";
 
-  fetch("https://api.github.com/repos/DKevInM/AB_winds/actions/workflows/odour_index.yml/dispatches", {
+
+  fetch("https://odour-trigger.kevin-010.workers.dev", {
     method: "POST",
-    headers: {
-      "Accept": "application/vnd.github+json"
-    },
-    body: JSON.stringify(payload)
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      lat: selectedPoint.lat,
+      lon: selectedPoint.lng,
+      start_time: document.getElementById("time").value,
+      hours_back: document.getElementById("hours").value
+    })
   })
-  .then(res => {
-    if (res.status === 204){
-      document.getElementById("status").innerText = "Model started ✔";
-    } else {
-      document.getElementById("status").innerText = "Error launching model";
-    }
+  .then(() => {
+    document.getElementById("status").innerText = "Model started";
+  })
+  .catch(err => {
+    document.getElementById("status").innerText = "Error: " + err;
   });
+
 }
 </script>
 
