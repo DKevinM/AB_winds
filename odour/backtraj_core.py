@@ -411,10 +411,10 @@ if __name__ == "__main__":
     os.makedirs("odour_data", exist_ok=True)
     
     with open("odour_data/backtraj_centerlines.geojson", "w") as f:
-        json.dump(centerlines_geojson, f)
+        json.dump(odour_data/centerlines_geojson, f)
     
     with open("odour_data/backtraj_cloud.geojson", "w") as f:
-        json.dump(cloud_geojson, f)
+        json.dump(odour_data/cloud_geojson, f)
 
 
     print("Wrote backtraj_centerlines.geojson and backtraj_cloud.geojson")
