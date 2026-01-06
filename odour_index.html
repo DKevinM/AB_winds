@@ -76,40 +76,28 @@ async function runModel(){
     return;
   }
 
-  document.getElementById("status").innerText = "Starting model…";
+  document.getElementById("status").innerText = "Triggering model…";
 
-  const payload = {
-    ref: "main",
-    inputs: {
-      latitude: selectedPoint.lat.toFixed(6),
-      longitude: selectedPoint.lng.toFixed(6),
-      time_utc: time,
-      hours: hours
-    }
-  };
-
-  const response = await fetch(
-    "https://api.github.com/repos/DKevinM/AB_winds/actions/workflows/odour_index.yml/dispatches",
+  const res = await fetch(
+    "https://lingering-sun-ff8a.drkevmcc.workers.dev",
     {
       method: "POST",
-      headers: {
-        "Accept": "application/vnd.github+json",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lat: selectedPoint.lat,
+        lon: selectedPoint.lng,
+        time: time,
+        hours: hours
+      })
     }
   );
+  
+  const txt = await res.text();
 
-  if (!response.ok) {
-    const txt = await response.text();
-    document.getElementById("status").innerText = "Error: " + txt;
-    return;
-  }
-
-  document.getElementById("status").innerText = "Model started — computing…";
-}
+  document.getElementById("status").innerText =
+    res.ok ? "Model triggered" : "Error: " + txt;
+}  
 </script>
-
 
 </body>
 </html>
