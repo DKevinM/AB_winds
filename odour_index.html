@@ -13,6 +13,8 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
+    <script src="data.js"></script>
+
     body { margin: 0; font-family: Arial; background: #111; color: #eee; }
     #map { height: 80vh; }
     #panel {
@@ -48,6 +50,9 @@
 
 
 <script>
+Promise.all([window.npriFCReady]).then(() => {
+  plotNPRI(window.NPRI_FC);
+});
 let lastModifiedSeen = null;
 
 let selectedPoint = null;
