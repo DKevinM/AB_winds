@@ -412,15 +412,12 @@ if __name__ == "__main__":
     
     outdir = Path("odour_data")
     outdir.mkdir(parents=True, exist_ok=True)
-    # build actual GeoJSON dicts
-    centers_gj = centerlines_to_geojson(centers)
-    cloud_gj   = cloud_to_geojson(cloud, every_n=3)
     
     with open(outdir / "backtraj_centerlines.geojson", "w", encoding="utf-8") as f:
-        json.dump(centers_gj, f)
+        json.dump(centerlines_to_geojson(centers), f)
     
     with open(outdir / "backtraj_cloud.geojson", "w", encoding="utf-8") as f:
-        json.dump(cloud_gj, f)
+        json.dump(cloud_to_geojson(cloud), f)
 
 
     print("Wrote backtraj_centerlines.geojson and backtraj_cloud.geojson")
