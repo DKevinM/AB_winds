@@ -43,6 +43,9 @@
 </div>
 
 <div id="map"></div>
+  
+<script src="data.js"></script>
+
 
 <script>
 let lastModifiedSeen = null;
@@ -51,14 +54,113 @@ let selectedPoint = null;
 let centerlineLayer = null;
 let cloudLayer = null;
 
+const markerGroup = L.layerGroup();
+const paLayer     = L.layerGroup();
+const npriLayerGroup = L.layerGroup();
+
+  
+
 const map = L.map('map').setView([53.54, -113.49], 7);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
-const overlayControl = L.control.layers(null, {}, { collapsed: false }).addTo(map);
+const overlayControl = L.control.layers(null, {
+  "Stations": markerGroup,
+  "PurpleAir": paLayer,
+  "NPRI Facilities": npriLayerGroup
+}, { collapsed: false }).addTo(map);
 
+function getFeatureLatLon(src) {
+  const g = src.geometry || {};
+
+  if (g.type === "Point") {
+    return { lat: g.coordinates[1], lon: g.coordinates[0] };
+  }
+
+  const p = src.properties || {};
+  const lat = Number(p.lat ?? p.Latitude ?? p.latitude);
+  const lon = Number(p.lon ?? p.Longitude ?? p.longitude);
+
+  if (isFinite(lat) && isFinite(lon)) return { lat, lon };
+  return null;
+}
+
+
+// PurpleAir eAQHI layer
+const PURPLE_URL = "https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/AB_PM25_map.json";
+
+// eAQHI = floor(pm_corr / 10) + 1, capped to 0–10
+function computeEAQHI(pm) {
+  if (pm == null || isNaN(pm)) return null;
+  let val = Math.floor(pm / 10) + 1;
+  if (val < 0) val = 0;
+  if (val > 10) val = 10;
+  return val;
+}
+
+fetch(PURPLE_URL)
+  .then(res => res.json())
+  .then(data => {
+    // handle either array or { data: [...] }
+    const records = Array.isArray(data)
+      ? data
+      : (Array.isArray(data.data) ? data.data : []);
+
+    records.forEach(rec => {
+      const lat = parseFloat(rec.lat ?? rec.Latitude ?? rec.latitude);
+      const lon = parseFloat(rec.lon ?? rec.Longitude ?? rec.longitude);
+      const pm  = parseFloat(rec.pm_corr);
+
+      if (!isFinite(lat) || !isFinite(lon) || !isFinite(pm)) return;
+
+      const eAQHI = computeEAQHI(pm);
+      if (eAQHI === null) return;
+
+      // pull out sensor index (with a couple of fallbacks just in case)
+      const sensorIndex = rec.sensor_index;
+      
+      const label = rec.name || (sensorIndex != null
+        ? `Sensor ${sensorIndex}`
+        : "Unnamed sensor");
+      const color = getColor(String(eAQHI));
+
+      const days = Number(new URLSearchParams(location.search).get("days")) || 7;
+      
+      const marker = L.circleMarker([lat, lon], {
+        radius: 4,                 // ~50% smaller than stations (7)
+        fillColor: color,
+        color: "#222",
+        weight: 0.5,
+        fillOpacity: 0.85
+      }).bindPopup(
+        `<strong>PurpleAir</strong><br>` +
+        `${label}<br>` +
+         (sensorIndex != null ? `Sensor index: ${sensorIndex}<br>` : "") +
+        `eAQHI: ${eAQHI}<br>` +
+        `PM₂.₅ (corr): ${pm.toFixed(1)} µg/m³` +
+        `<hr>` +
+        `<a href="/AQHI.forecast/history/sensor_compare.html?sensor_index=${sensorIndex}"
+           target="_blank">
+           View historical PM2.5
+        </a>`          
+      );
+
+      marker.addTo(paLayer);
+    });
+
+    // Turn on PurpleAir by default (optional)
+    paLayer.addTo(map);
+  })
+  .catch(err => {
+    console.error("Error loading PurpleAir data:", err);
+  });
+
+
+
+
+  
 let marker;
 
 map.on('click', e => {
@@ -67,6 +169,9 @@ map.on('click', e => {
   marker = L.marker(e.latlng).addTo(map);
 });
 
+markerGroup.addTo(map);
+paLayer.addTo(map);
+  
 
 async function checkForNewOutput(startTime) {
   const res = await fetch(`odour_data/backtraj_centerlines.geojson?nocache=${Date.now()}`, { method: "HEAD" });
@@ -88,6 +193,39 @@ async function checkForNewOutput(startTime) {
 }
 
 
+function plotNPRI(fc) {
+  npriLayerGroup.clearLayers();
+  if (!fc || !Array.isArray(fc.features)) return;
+
+  fc.features.forEach(f => {
+    const ll = getFeatureLatLon(f);
+    if (!ll) return;
+
+    const p   = f.properties || {};
+    const fac = p.FACILITY_NAME || p.FacilityName || "Facility";
+    const co  = p.COMPANY_NAME  || p.Company      || "";
+    const yr  = p.REPORTING_YEAR || p.ReportingYear || "";
+    const label = co ? `${fac} (${co})` : fac;
+
+    L.circleMarker([ll.lat, ll.lon], {
+      radius: 4,
+      color: "#cc0000",
+      weight: 1,
+      fillOpacity: 0.8
+    })
+      .bindPopup(`
+        <b>${label}</b><br>
+        ${yr ? "Year: " + yr + "<br>" : ""}
+        <small>${ll.lat.toFixed(4)}, ${ll.lon.toFixed(4)}</small>
+      `)
+      .addTo(npriLayerGroup);
+  });
+
+  console.log("[odour] plotted NPRI:", fc.features.length);
+}
+
+
+  
 async function loadTrajectories() {
   try {
     const centerRes = await fetch("odour_data/backtraj_centerlines.geojson", { cache: "no-store" });
@@ -131,6 +269,24 @@ async function loadTrajectories() {
       }
     }).addTo(map);
 
+
+    window.dataReady.then(() => {
+      fetchAllStationData().then(allStations => {
+          allStations.forEach(({ stationName, lat, lon, html, aqhi }) => {
+            const fillColor = getColor(String(aqhi || "NA"));
+            const marker = L.circleMarker([lat, lon], {
+              radius: 7,
+              fillColor: fillColor,
+              color: "#222",
+              weight: 1,
+              fillOpacity: 0.85
+            }).bindPopup(html);
+            marker.addTo(markerGroup);
+          });
+      });
+    });
+
+    
     overlayControl.addOverlay(centerlineLayer, "Trajectory Trend");
     overlayControl.addOverlay(cloudLayer, "Particle Cloud");
 
@@ -188,6 +344,15 @@ async function runModel() {
     }
   }, 15000);
 }
+
+Promise.all([
+  window.npriFCReady
+]).then(() => {
+  plotNPRI(window.NPRI_FC);
+  npriLayerGroup.addTo(map);   // optional default-on
+});
+
+  
 </script>
 
   
