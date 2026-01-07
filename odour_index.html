@@ -46,53 +46,6 @@
 
 <script>
 let lastModifiedSeen = null;
-  
-let selectedPoint = null;
-let centerlineLayer = null;
-let cloudLayer = null;
-
-const map = L.map('map').setView([53.54, -113.49], 7);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 18
-}).addTo(map);
-
-const overlayControl = L.control.layers(null, {}, { collapsed: false }).addTo(map);  
-
-let marker;
-
-map.on('click', e => {
-  selectedPoint = e.latlng;
-  if (marker) map.removeLayer(marker);
-  marker = L.marker(e.latlng).addTo(map);
-});
-
-
-async function checkForNewOutput(startTime) {
-  const res = await fetch(`odour_data/backtraj_centerlines.geojson?nocache=${Date.now()}`, { method: "HEAD" });
-  if (!res.ok) return false;
-
-  const lm = res.headers.get("Last-Modified");
-
-  if (!lastModifiedSeen) {
-    lastModifiedSeen = lm;
-    return false;
-  }
-
-  if (lm !== lastModifiedSeen && Date.now() - startTime > 60000) {
-    lastModifiedSeen = lm;
-    return true;
-  }
-
-  return false;
-}
-
-
-
-  
-
-<script>
-let lastModifiedSeen = null;
 
 let selectedPoint = null;
 let centerlineLayer = null;
