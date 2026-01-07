@@ -389,35 +389,36 @@ def cloud_to_geojson(cloud_points, every_n: int = 1):
 # ---------------------------
 
 if __name__ == "__main__":
-    met = MetStoreV2("met_data")
-    print("Loaded snapshots:", len(met.snaps))
-    print("Time range:", met.snaps[0].valid, "to", met.snaps[-1].valid)
+    import os
 
-    # example start (change these)
-    start_lat = 53.5461
-    start_lon = -113.4938
-    start_time = met.snaps[0].valid  # for a quick test, use first valid
+    lat = float(os.environ["LAT"])
+    lon = float(os.environ["LON"])
+    start_time = dt.datetime.fromisoformat(os.environ["TIME_UTC"])
+    hours = float(os.environ["HOURS"])
+
+    met = MetStoreV2("met_data")
 
     centers, cloud = run_back_trajectories(
         met,
-        start_lat=start_lat,
-        start_lon=start_lon,
+        start_lat=lat,
+        start_lon=lon,
         start_time_utc=start_time,
-        hours=5.0,
+        hours=hours,
         dt_s=60,
         n_particles=150
     )
 
     from pathlib import Path
-    
     outdir = Path("odour_data")
     outdir.mkdir(parents=True, exist_ok=True)
-    
+
+    centers_gj = centerlines_to_geojson(centers)
+    cloud_gj   = cloud_to_geojson(cloud, every_n=3)
+
     with open(outdir / "backtraj_centerlines.geojson", "w", encoding="utf-8") as f:
-        json.dump(centerlines_to_geojson(centers), f)
-    
+        json.dump(centers_gj, f)
+
     with open(outdir / "backtraj_cloud.geojson", "w", encoding="utf-8") as f:
-        json.dump(cloud_to_geojson(cloud), f)
+        json.dump(cloud_gj, f)
 
-
-    print("Wrote backtraj_centerlines.geojson and backtraj_cloud.geojson")
+    print("Model run complete for:", lat, lon, start_time, "hours:", hours)
