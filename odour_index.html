@@ -45,6 +45,8 @@
 <div id="map"></div>
 
 <script>
+let lastModifiedSeen = null;
+  
 let selectedPoint = null;
 let centerlineLayer = null;
 let cloudLayer = null;
@@ -55,6 +57,8 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
+const overlayControl = L.control.layers(null, {}, { collapsed: false }).addTo(map);  
+
 let marker;
 
 map.on('click', e => {
@@ -62,6 +66,128 @@ map.on('click', e => {
   if (marker) map.removeLayer(marker);
   marker = L.marker(e.latlng).addTo(map);
 });
+
+
+async function checkForNewOutput(startTime) {
+  const res = await fetch(`odour_data/backtraj_centerlines.geojson?nocache=${Date.now()}`, { method: "HEAD" });
+  if (!res.ok) return false;
+
+  const lm = res.headers.get("Last-Modified");
+
+  if (!lastModifiedSeen) {
+    lastModifiedSeen = lm;
+    return false;
+  }
+
+  if (lm !== lastModifiedSeen && Date.now() - startTime > 60000) {
+    lastModifiedSeen = lm;
+    return true;
+  }
+
+  return false;
+}
+
+
+
+  
+
+<script>
+let lastModifiedSeen = null;
+
+let selectedPoint = null;
+let centerlineLayer = null;
+let cloudLayer = null;
+
+const map = L.map('map').setView([53.54, -113.49], 7);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 18
+}).addTo(map);
+
+const overlayControl = L.control.layers(null, {}, { collapsed: false }).addTo(map);
+
+let marker;
+
+map.on('click', e => {
+  selectedPoint = e.latlng;
+  if (marker) map.removeLayer(marker);
+  marker = L.marker(e.latlng).addTo(map);
+});
+
+
+async function checkForNewOutput(startTime) {
+  const res = await fetch(`odour_data/backtraj_centerlines.geojson?nocache=${Date.now()}`, { method: "HEAD" });
+  if (!res.ok) return false;
+
+  const lm = res.headers.get("Last-Modified");
+
+  if (!lastModifiedSeen) {
+    lastModifiedSeen = lm;
+    return false;
+  }
+
+  if (lm !== lastModifiedSeen && Date.now() - startTime > 60000) {
+    lastModifiedSeen = lm;
+    return true;
+  }
+
+  return false;
+}
+
+
+async function loadTrajectories() {
+  try {
+    const centerRes = await fetch("odour_data/backtraj_centerlines.geojson", { cache: "no-store" });
+    const cloudRes  = await fetch("odour_data/backtraj_cloud.geojson", { cache: "no-store" });
+
+    if (!centerRes.ok || !cloudRes.ok) return false;
+
+    const centerGeo = await centerRes.json();
+    const cloudGeo  = await cloudRes.json();
+
+    if (centerlineLayer) map.removeLayer(centerlineLayer);
+    if (cloudLayer) map.removeLayer(cloudLayer);
+
+    const density = {};
+    cloudGeo.features.forEach(f => {
+      const key = f.geometry.coordinates.join(",");
+      density[key] = (density[key] || 0) + 1;
+    });
+
+    function colorForDensity(n) {
+      if (n > 15) return "#ff0000";
+      if (n > 8) return "#ff8800";
+      if (n > 3) return "#ffff00";
+      return "#33ccff";
+    }
+
+    centerlineLayer = L.geoJSON(centerGeo, {
+      style: { color: "#ff3333", weight: 3 }
+    }).addTo(map);
+
+    cloudLayer = L.geoJSON(cloudGeo, {
+      pointToLayer: (f, latlng) => {
+        const key = f.geometry.coordinates.join(",");
+        const d = density[key] || 1;
+
+        return L.circleMarker(latlng, {
+          radius: Math.min(8, 2 + d),
+          color: colorForDensity(d),
+          fillOpacity: 0.7
+        });
+      }
+    }).addTo(map);
+
+    overlayControl.addOverlay(centerlineLayer, "Trajectory Trend");
+    overlayControl.addOverlay(cloudLayer, "Particle Cloud");
+
+    return true;
+  } catch (e) {
+    console.warn("Waiting for model output…");
+    return false;
+  }
+}
+
 
 async function runModel() {
   if (!selectedPoint) {
@@ -91,60 +217,23 @@ async function runModel() {
   });
 
   if (!res.ok) {
-    const txt = await res.text();
-    document.getElementById("status").innerText = "Error: " + txt;
+    document.getElementById("status").innerText = "Error triggering model";
     return;
   }
 
-  document.getElementById("status").innerText = "Model running… waiting for results";
+  document.getElementById("status").innerText = "Model running… waiting for output";
 
-  // bounded wait loop — tries for up to ~2 minutes
-  let attempts = 0;
-  const maxAttempts = 8;
+  const startTime = Date.now();
 
-  const timer = setInterval(async () => {
-    attempts++;
+  const poll = setInterval(async () => {
+    const ready = await checkForNewOutput(startTime);
 
-    const ok = await loadTrajectories();
-
-    if (ok) {
+    if (ready) {
+      clearInterval(poll);
+      await loadTrajectories();
       document.getElementById("status").innerText = "Trajectories loaded";
-      clearInterval(timer);
-    } else if (attempts >= maxAttempts) {
-      document.getElementById("status").innerText =
-        "Model did not finish in expected time";
-      clearInterval(timer);
     }
   }, 15000);
-}
-
-async function loadTrajectories() {
-  try {
-    const centerRes = await fetch("odour_data/backtraj_centerlines.geojson", { cache: "no-store" });
-    const cloudRes  = await fetch("odour_data/backtraj_cloud.geojson", { cache: "no-store" });
-
-    if (!centerRes.ok || !cloudRes.ok) return false;
-
-    const centerGeo = await centerRes.json();
-    const cloudGeo  = await cloudRes.json();
-
-    if (centerlineLayer) map.removeLayer(centerlineLayer);
-    if (cloudLayer) map.removeLayer(cloudLayer);
-
-    centerlineLayer = L.geoJSON(centerGeo, {
-      style: { color: "#ff3333", weight: 3 }
-    }).addTo(map);
-
-    cloudLayer = L.geoJSON(cloudGeo, {
-      pointToLayer: (f, latlng) =>
-        L.circleMarker(latlng, { radius: 3, color: "#33ccff", fillOpacity: 0.6 })
-    }).addTo(map);
-
-    return true;
-  } catch (e) {
-    console.warn("Waiting for model output…");
-    return false;
-  }
 }
 </script>
 
