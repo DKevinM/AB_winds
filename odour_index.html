@@ -44,9 +44,10 @@
 
 <div id="map"></div>
 
-  
 <script>
 let selectedPoint = null;
+let centerlineLayer = null;
+let cloudLayer = null;
 
 const map = L.map('map').setView([53.54, -113.49], 7);
 
@@ -62,8 +63,8 @@ map.on('click', e => {
   marker = L.marker(e.latlng).addTo(map);
 });
 
-async function runModel(){
-  if (!selectedPoint){
+async function runModel() {
+  if (!selectedPoint) {
     alert("Click on the map first.");
     return;
   }
@@ -71,33 +72,82 @@ async function runModel(){
   const time = document.getElementById("time").value;
   const hours = document.getElementById("hours").value;
 
-  if (!time){
+  if (!time) {
     alert("Enter a UTC time.");
     return;
   }
 
   document.getElementById("status").innerText = "Triggering model…";
 
-  const res = await fetch(
-    "https://lingering-sun-ff8a.drkevmcc.workers.dev",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        lat: selectedPoint.lat,
-        lon: selectedPoint.lng,
-        time: time,
-        hours: hours
-      })
-    }
-  );
-  
-  const txt = await res.text();
+  const res = await fetch("https://lingering-sun-ff8a.drkevmcc.workers.dev", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      lat: selectedPoint.lat,
+      lon: selectedPoint.lng,
+      time: time,
+      hours: hours
+    })
+  });
 
-  document.getElementById("status").innerText =
-    res.ok ? "Model triggered" : "Error: " + txt;
-}  
+  if (!res.ok) {
+    const txt = await res.text();
+    document.getElementById("status").innerText = "Error: " + txt;
+    return;
+  }
+
+  document.getElementById("status").innerText = "Model running… waiting for results";
+
+  // bounded wait loop — tries for up to ~2 minutes
+  let attempts = 0;
+  const maxAttempts = 8;
+
+  const timer = setInterval(async () => {
+    attempts++;
+
+    const ok = await loadTrajectories();
+
+    if (ok) {
+      document.getElementById("status").innerText = "Trajectories loaded";
+      clearInterval(timer);
+    } else if (attempts >= maxAttempts) {
+      document.getElementById("status").innerText =
+        "Model did not finish in expected time";
+      clearInterval(timer);
+    }
+  }, 15000);
+}
+
+async function loadTrajectories() {
+  try {
+    const centerRes = await fetch("odour_data/backtraj_centerlines.geojson", { cache: "no-store" });
+    const cloudRes  = await fetch("odour_data/backtraj_cloud.geojson", { cache: "no-store" });
+
+    if (!centerRes.ok || !cloudRes.ok) return false;
+
+    const centerGeo = await centerRes.json();
+    const cloudGeo  = await cloudRes.json();
+
+    if (centerlineLayer) map.removeLayer(centerlineLayer);
+    if (cloudLayer) map.removeLayer(cloudLayer);
+
+    centerlineLayer = L.geoJSON(centerGeo, {
+      style: { color: "#ff3333", weight: 3 }
+    }).addTo(map);
+
+    cloudLayer = L.geoJSON(cloudGeo, {
+      pointToLayer: (f, latlng) =>
+        L.circleMarker(latlng, { radius: 3, color: "#33ccff", fillOpacity: 0.6 })
+    }).addTo(map);
+
+    return true;
+  } catch (e) {
+    console.warn("Waiting for model output…");
+    return false;
+  }
+}
 </script>
 
+  
 </body>
 </html>
