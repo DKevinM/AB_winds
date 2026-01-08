@@ -5,16 +5,12 @@
   <title>Odour Index — Back Trajectory Tool</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
-
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <style>
-    <script src="data.js"></script>
+  <script src="data.js"></script>
 
+  <style>
     body { margin: 0; font-family: Arial; background: #111; color: #eee; }
     #map { height: 80vh; }
     #panel {
@@ -32,6 +28,7 @@
   </style>
 </head>
 
+
 <body>
 
 <div id="panel">
@@ -46,13 +43,7 @@
 
 <div id="map"></div>
   
-<script src="data.js"></script>
-
-
 <script>
-Promise.all([window.npriFCReady]).then(() => {
-  plotNPRI(window.NPRI_FC);
-});
 let lastModifiedSeen = null;
 
 let selectedPoint = null;
@@ -64,8 +55,6 @@ const paLayer     = L.layerGroup();
 const npriLayerGroup = L.layerGroup();
 
 const NPRI_URL = "https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data/NPRI.geojson";
-  
-  
 
 const map = L.map('map').setView([53.54, -113.49], 7);
 
@@ -79,6 +68,15 @@ const overlayControl = L.control.layers(null, {
   "NPRI Facilities": npriLayerGroup
 }, { collapsed: false }).addTo(map);
 
+fetch(NPRI_URL)
+  .then(res => res.json())
+  .then(fc => {
+    window.NPRI_FC = fc;
+    plotNPRI(fc);
+    npriLayerGroup.addTo(map);   // default on
+  })
+  .catch(err => console.error("NPRI load failed:", err));
+  
 function getFeatureLatLon(src) {
   const g = src.geometry || {};
 
@@ -372,13 +370,6 @@ async function runModel() {
     }
   }, 15000);
 }
-
-Promise.all([
-  window.npriFCReady
-]).then(() => {
-  plotNPRI(window.NPRI_FC);
-  npriLayerGroup.addTo(map);   // optional default-on
-});
 
   
 </script>
