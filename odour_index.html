@@ -189,16 +189,16 @@ map.on("zoomend", async () => {
   const z = map.getZoom();
 
   if (z >= AER_ZOOM_THRESHOLD && !aerLayer) {
-    console.log("Loading AER layer…");
-
-    const res = await fetch("odour_data/ST102AER.geojson");
-    const geo = await res.json();
-
-    aerLayer = L.geoJSON(geo, {
-      style: { color: "#888", weight: 1, opacity: 0.6 }
-    }).addTo(map);
-
-    overlayControl.addOverlay(aerLayer, "AER Facilities");
+    try {
+      const res = await fetch("odour_data/ST102AER.geojson");
+      if (!res.ok) throw new Error("AER file missing");
+  
+      const geo = await res.json();
+      aerLayer = L.geoJSON(geo, {...}).addTo(map);
+      overlayControl.addOverlay(aerLayer, "AER Facilities");
+    } catch (e) {
+      console.warn("Skipping AER:", e.message);
+    }
   }
 
   if (z < AER_ZOOM_THRESHOLD && aerLayer) {
@@ -342,17 +342,20 @@ async function loadTrajectories() {
 
     
     const density = {};
-    const GRID = 0.001; // ~100 m bin
+    const cellSize = 0.01; // ≈ 1 km grid
     
-    function snap(val) {
-      return Math.round(val / GRID) * GRID;
+    function cellKey(lat, lon) {
+      const y = Math.round(lat / cellSize) * cellSize;
+      const x = Math.round(lon / cellSize) * cellSize;
+      return `${y.toFixed(3)},${x.toFixed(3)}`;
     }
     
     cloudGeo.features.forEach(f => {
       const [lon, lat] = f.geometry.coordinates;
-      const key = `${snap(lat)},${snap(lon)}`;
+      const key = cellKey(lat, lon);
       density[key] = (density[key] || 0) + 1;
     });
+
 
 
     function densityColor(n){
@@ -362,10 +365,14 @@ async function loadTrajectories() {
       if (n >= 2)  return "#ffff00";   // low
       return "#66ccff";                // very low
     }
+
+    centerlineLayer = L.geoJSON(centerGeo, {
+      style: { color: "#ff3333", weight: 3 }
+    }).addTo(map);
     
     cloudLayer = L.geoJSON(cloudGeo, {
       pointToLayer: (f, latlng) => {
-        const key = f.geometry.coordinates.join(",");
+        const key = cellKey(latlng.lat, latlng.lng);
         const d = density[key] || 1;
     
         return L.circleMarker(latlng, {
