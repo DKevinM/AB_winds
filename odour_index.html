@@ -288,6 +288,7 @@ function plotNPRI(fc) {
   console.log("[odour] plotted NPRI:", fc.features.length);
 }
 
+
   window.dataReady.then(() => {
     fetchAllStationData().then(allStations => {
       allStations.forEach(({ stationName, lat, lon, html, aqhi }) => {
@@ -303,7 +304,9 @@ function plotNPRI(fc) {
   
         marker.addTo(markerGroup);
       });
+    });
   });
+
   
 async function loadTrajectories() {
   try {
