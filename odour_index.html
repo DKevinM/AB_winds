@@ -165,6 +165,29 @@ fetch(PURPLE_URL)
   });
 
 
+let aerLayer = null;
+const AER_ZOOM_THRESHOLD = 11;
+  
+map.on("zoomend", async () => {
+  const z = map.getZoom();
+
+  if (z >= AER_ZOOM_THRESHOLD && !aerLayer) {
+    console.log("Loading AER layer…");
+
+    const res = await fetch("data/ST102AER.geojson");
+    const geo = await res.json();
+
+    aerLayer = L.geoJSON(geo, {
+      style: { color: "#888", weight: 1, opacity: 0.6 }
+    }).addTo(map);
+
+    overlayControl.addOverlay(aerLayer, "AER Facilities");
+  }
+
+  if (z < AER_ZOOM_THRESHOLD && aerLayer) {
+    map.removeLayer(aerLayer);
+  }
+});
 
 
   
@@ -252,30 +275,28 @@ async function loadTrajectories() {
       density[key] = (density[key] || 0) + 1;
     });
 
-    function colorForDensity(n) {
-      if (n > 15) return "#ff0000";
-      if (n > 8) return "#ff8800";
-      if (n > 3) return "#ffff00";
-      return "#33ccff";
+    function densityColor(n){
+      if (n >= 15) return "#ff0000";   // very high
+      if (n >= 10) return "#ff6600";   // high
+      if (n >= 5)  return "#ffaa00";   // medium
+      if (n >= 2)  return "#ffff00";   // low
+      return "#66ccff";                // very low
     }
-
-    centerlineLayer = L.geoJSON(centerGeo, {
-      style: { color: "#ff3333", weight: 3 }
-    }).addTo(map);
-
+    
     cloudLayer = L.geoJSON(cloudGeo, {
       pointToLayer: (f, latlng) => {
         const key = f.geometry.coordinates.join(",");
         const d = density[key] || 1;
-
+    
         return L.circleMarker(latlng, {
-          radius: Math.min(8, 2 + d),
-          color: colorForDensity(d),
-          fillOpacity: 0.7
+          radius: Math.min(10, 2 + d),
+          fillColor: densityColor(d),
+          color: "#111",
+          weight: 0.5,
+          fillOpacity: 0.8
         });
       }
     }).addTo(map);
-
 
     window.dataReady.then(() => {
       fetchAllStationData().then(allStations => {
