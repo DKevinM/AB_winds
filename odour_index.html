@@ -207,6 +207,60 @@ map.on("zoomend", async () => {
 });
 
 
+const STATION_CSV =
+  "https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/last6h.csv";
+
+async function loadStations() {
+  const text = await fetch(STATION_CSV).then(r => r.text());
+
+  const lines = text.trim().split("\n");
+  const headers = lines.shift().split(",");
+
+  const rows = lines.map(line => {
+    const cols = line.split(",");
+    return Object.fromEntries(headers.map((h, i) => [h, cols[i]]));
+  });
+
+  const latestByStation = {};
+
+  rows.forEach(r => {
+    const name = r.StationName;
+    const t = new Date(r.ReadingDate);
+    if (!latestByStation[name] || t > new Date(latestByStation[name].ReadingDate)) {
+      latestByStation[name] = r;
+    }
+  });
+
+  return Object.values(latestByStation);
+}
+
+loadStations().then(stations => {
+  stations.forEach(r => {
+    const lat = Number(r.Latitude);
+    const lon = Number(r.Longitude);
+    const aqhi = Number(r.Value);
+
+    if (!isFinite(lat) || !isFinite(lon)) return;
+
+    const marker = L.circleMarker([lat, lon], {
+      radius: 7,
+      fillColor: getColor(aqhi),
+      color: "#222",
+      weight: 1,
+      fillOpacity: 0.85
+    }).bindPopup(
+      `<b>${r.StationName}</b><br>
+       AQHI: ${aqhi}<br>
+       ${new Date(r.ReadingDate).toLocaleString("en-CA", { timeZone: "America/Edmonton" })}`
+    );
+
+    marker.addTo(markerGroup);
+  });
+
+  markerGroup.addTo(map);
+});
+
+  
   
 let marker;
 
