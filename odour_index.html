@@ -56,6 +56,27 @@ const NPRI_URL = "https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data
 
 const map = L.map('map').setView([53.54, -113.49], 7);
 
+  // ---------------------------------------------
+  // AQHI colour function (for categories 1..10+)
+  // ---------------------------------------------
+  function getColor(aqhi) {
+    const lut = {
+      "1":  "#01cbff",
+      "2":  "#0099cb",
+      "3":  "#016797",
+      "4":  "#fffe03",
+      "5":  "#ffcb00",
+      "6":  "#ff9835",
+      "7":  "#fd6866",
+      "8":  "#fe0002",
+      "9":  "#cc0001",
+      "10": "#9a0100",
+      "10+": "#640100"
+    };
+    return lut[String(aqhi)] || "#D3D3D3";
+  }
+
+  
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
