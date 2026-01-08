@@ -191,7 +191,7 @@ map.on("zoomend", async () => {
   if (z >= AER_ZOOM_THRESHOLD && !aerLayer) {
     console.log("Loading AER layer…");
 
-    const res = await fetch("data/ST102AER.geojson");
+    const res = await fetch("odour_data/ST102AER.geojson");
     const geo = await res.json();
 
     aerLayer = L.geoJSON(geo, {
@@ -340,11 +340,20 @@ async function loadTrajectories() {
     if (centerlineLayer) map.removeLayer(centerlineLayer);
     if (cloudLayer) map.removeLayer(cloudLayer);
 
+    
     const density = {};
+    const GRID = 0.001; // ~100 m bin
+    
+    function snap(val) {
+      return Math.round(val / GRID) * GRID;
+    }
+    
     cloudGeo.features.forEach(f => {
-      const key = f.geometry.coordinates.join(",");
+      const [lon, lat] = f.geometry.coordinates;
+      const key = `${snap(lat)},${snap(lon)}`;
       density[key] = (density[key] || 0) + 1;
     });
+
 
     function densityColor(n){
       if (n >= 15) return "#ff0000";   // very high
@@ -385,6 +394,9 @@ async function loadTrajectories() {
       });
     });
 
+    centerlineLayer = L.geoJSON(centerGeo, {
+      style: { color: "#00ffff", weight: 2 }
+    }).addTo(map);
     
     overlayControl.addOverlay(centerlineLayer, "Trajectory Trend");
     overlayControl.addOverlay(cloudLayer, "Particle Cloud");
