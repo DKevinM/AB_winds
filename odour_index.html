@@ -7,6 +7,7 @@
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="odour/data.js"></script>
 
   <style>
     body { margin: 0; font-family: Arial; background: #111; color: #eee; }
@@ -41,7 +42,7 @@
 
 <div id="map"></div>
   
-<script src="odour/data.js"></script>
+
 
 
   
@@ -55,10 +56,13 @@ let cloudLayer = null;
 const markerGroup = L.layerGroup();
 const paLayer     = L.layerGroup();
 const npriLayerGroup = L.layerGroup();
-
 const NPRI_URL = "https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data/NPRI.geojson";
-
 const map = L.map('map').setView([53.54, -113.49], 7);
+const layerRegistry = {};
+
+
+layerRegistry["Stations"]          = markerGroup;
+layerRegistry["Sensors (PurpleAir)"] = paLayer;  
 
   // ---------------------------------------------
   // AQHI colour function (for categories 1..10+)
@@ -220,56 +224,6 @@ map.on("zoomend", async () => {
 
 
 
-const STATION_CSV =
-  "https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/last6h.csv";
-
-async function loadStations() {
-  const text = await fetch(STATION_CSV).then(r => r.text());
-
-  const lines = text.trim().split("\n");
-  const headers = lines.shift().split(",");
-
-  const rows = lines.map(line => {
-    const cols = line.split(",");
-    return Object.fromEntries(headers.map((h, i) => [h, cols[i]]));
-  });
-
-  const latestByStation = {};
-
-  rows.forEach(r => {
-    const name = r.StationName;
-    const t = new Date(r.ReadingDate);
-    if (!latestByStation[name] || t > new Date(latestByStation[name].ReadingDate)) {
-      latestByStation[name] = r;
-    }
-  });
-
-  return Object.values(latestByStation);
-}
-
-loadStations().then(stations => {
-  stations.forEach(r => {
-    const lat = Number(r.Latitude);
-    const lon = Number(r.Longitude);
-    const aqhi = Number(r.Value);
-
-    if (!isFinite(lat) || !isFinite(lon)) return;
-
-    const marker = L.circleMarker([lat, lon], {
-      radius: 7,
-      fillColor: getColor(aqhi),
-      color: "#222",
-      weight: 1,
-      fillOpacity: 0.85
-    }).bindPopup(
-      `<b>${r.StationName}</b><br>
-       AQHI: ${aqhi}<br>
-       ${new Date(r.ReadingDate).toLocaleString("en-CA", { timeZone: "America/Edmonton" })}`
-    );
-
-    marker.addTo(markerGroup);
-  });
-
   markerGroup.addTo(map);
 });
 
@@ -338,7 +292,22 @@ function plotNPRI(fc) {
   console.log("[odour] plotted NPRI:", fc.features.length);
 }
 
-
+  window.dataReady.then(() => {
+    fetchAllStationData().then(allStations => {
+      allStations.forEach(({ stationName, lat, lon, html, aqhi }) => {
+        const fillColor = getColor(String(aqhi || "NA"));
+  
+        const marker = L.circleMarker([lat, lon], {
+          radius: 7,
+          fillColor: fillColor,
+          color: "#222",
+          weight: 1,
+          fillOpacity: 0.85
+        }).bindPopup(html);
+  
+        marker.addTo(markerGroup);
+      });
+  });
   
 async function loadTrajectories() {
   try {
@@ -379,9 +348,7 @@ async function loadTrajectories() {
       return "#66ccff";                // very low
     }
 
-    centerlineLayer = L.geoJSON(centerGeo, {
-      style: { color: "#ff3333", weight: 3 }
-    }).addTo(map);
+
     
     cloudLayer = L.geoJSON(cloudGeo, {
       pointToLayer: (f, latlng) => {
@@ -399,25 +366,7 @@ async function loadTrajectories() {
     }).addTo(map);
 
 
-    window.dataReady.then(() => {
-      fetchAllStationData().then(allStations => {
-        allStations.forEach(({ stationName, lat, lon, html, aqhi }) => {
-          const fillColor = getColor(String(aqhi || "NA"));
-    
-          const marker = L.circleMarker([lat, lon], {
-            radius: 7,
-            fillColor: fillColor,
-            color: "#222",
-            weight: 1,
-            fillOpacity: 0.85
-          }).bindPopup(html);
-    
-          marker.addTo(markerGroup);
-        });
-    
-        markerGroup.addTo(map);
-      });
-    });
+
 
 
     centerlineLayer = L.geoJSON(centerGeo, {
