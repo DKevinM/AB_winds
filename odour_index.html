@@ -41,6 +41,9 @@
 
 <div id="map"></div>
   
+<script src="data.js"></script>
+
+  
 <script>
 let lastModifiedSeen = null;
 
@@ -394,21 +397,27 @@ async function loadTrajectories() {
       }
     }).addTo(map);
 
+
     window.dataReady.then(() => {
       fetchAllStationData().then(allStations => {
-          allStations.forEach(({ stationName, lat, lon, html, aqhi }) => {
-            const fillColor = getColor(String(aqhi || "NA"));
-            const marker = L.circleMarker([lat, lon], {
-              radius: 7,
-              fillColor: fillColor,
-              color: "#222",
-              weight: 1,
-              fillOpacity: 0.85
-            }).bindPopup(html);
-            marker.addTo(markerGroup);
-          });
+        allStations.forEach(({ stationName, lat, lon, html, aqhi }) => {
+          const fillColor = getColor(String(aqhi || "NA"));
+    
+          const marker = L.circleMarker([lat, lon], {
+            radius: 7,
+            fillColor: fillColor,
+            color: "#222",
+            weight: 1,
+            fillOpacity: 0.85
+          }).bindPopup(html);
+    
+          marker.addTo(markerGroup);
+        });
+    
+        markerGroup.addTo(map);
       });
     });
+
 
     centerlineLayer = L.geoJSON(centerGeo, {
       style: { color: "#00ffff", weight: 2 }
