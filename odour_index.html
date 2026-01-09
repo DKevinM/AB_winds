@@ -200,7 +200,7 @@ map.on("zoomend", async () => {
     console.log("Loading AER layer…");
 
     try {
-      const res = await fetch("odour_data/ST102AER.geojson");
+      const res = await fetch("odour_data/ST102_AER_web.geojson");
       if (!res.ok) throw new Error("AER file missing");
 
       const geo = await res.json();
