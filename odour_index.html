@@ -191,6 +191,7 @@ fetch(PURPLE_URL)
 
 
 let aerLayer = null;
+
 fetch("odour_data/ST102_AER_web.geojson")
   .then(r => r.json())
   .then(data => {
@@ -201,9 +202,15 @@ fetch("odour_data/ST102_AER_web.geojson")
           color: "#000",
           fillColor: "#000",
           fillOpacity: 1
-        })
+        }),
+      onEachFeature: (feature, layer) => {
+        if (feature.properties && feature.properties.FAC_NAME) {
+          layer.bindPopup(`<strong>${feature.properties.FAC_NAME}</strong>`);
+        }
+      }
     });
   });
+
   
 map.on("zoomend", () => {
   const z = map.getZoom();
