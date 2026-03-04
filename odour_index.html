@@ -247,14 +247,13 @@ async function checkForNewOutput() {
   try {
 
     const res = await fetch(
-      "odour_data/backtraj_centerlines.geojson",
-      { method: "HEAD", cache: "no-store" }
+      "odour_data/backtraj_centerlines.geojson?t=" + Date.now(),
+      { method: "HEAD" }
     );
 
     if (!res.ok) return false;
 
     const lastModified = res.headers.get("Last-Modified");
-
     if (!lastModified) return false;
 
     const fileTime = new Date(lastModified).getTime();
@@ -266,15 +265,10 @@ async function checkForNewOutput() {
       console.log("New trajectory file detected.");
       return true;
     }
-
     return false;
-
   } catch (err) {
-
     console.log("Still waiting for model output");
-
     return false;
-
   }
 }
 
@@ -411,7 +405,7 @@ async function runModel() {
     return;
   }
 
-  let modelStartTime = null;
+  let modelStartTime = Date.now();
   
   const time = document.getElementById("time").value;
   const hours = document.getElementById("hours").value;
