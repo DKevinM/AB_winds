@@ -247,19 +247,27 @@ async function checkForNewOutput() {
   try {
 
     const res = await fetch(
-      "odour_data/backtraj_centerlines.geojson?nocache=" + Date.now(),
-      { cache: "no-store" }
+      "odour_data/backtraj_centerlines.geojson",
+      { method: "HEAD", cache: "no-store" }
     );
 
     if (!res.ok) return false;
 
-    const geo = await res.json();
+    const lastModified = res.headers.get("Last-Modified");
 
-    if (!geo.features || geo.features.length === 0) return false;
+    if (!lastModified) return false;
 
-    console.log("Trajectory file ready:", geo.features.length);
+    const fileTime = new Date(lastModified).getTime();
 
-    return true;
+    console.log("File time:", fileTime);
+    console.log("Model start:", modelStartTime);
+
+    if (fileTime > modelStartTime) {
+      console.log("New trajectory file detected.");
+      return true;
+    }
+
+    return false;
 
   } catch (err) {
 
@@ -403,6 +411,8 @@ async function runModel() {
     return;
   }
 
+  let modelStartTime = null;
+  
   const time = document.getElementById("time").value;
   const hours = document.getElementById("hours").value;
 
@@ -447,26 +457,21 @@ function startTrajectoryPolling() {
     "Model triggered — checking every 5 minutes…";
 
   trajectoryPoll = setInterval(async () => {
-
-    console.log("Checking for trajectory output…");
-
+  
     const ready = await checkForNewOutput();
-
+  
     if (ready) {
-
-      console.log("Trajectory output found — loading.");
-
+  
       clearInterval(trajectoryPoll);
-      trajectoryPoll = null;
-
+  
       await loadTrajectories();
-
+  
       document.getElementById("status").innerText =
-        "Trajectories loaded";
-
+        "Latest trajectories loaded";
+  
     }
-
-  }, 300000); // 5 minutes
+  
+  }, 300000);
 }
   
   
