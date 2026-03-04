@@ -405,7 +405,7 @@ async function runModel() {
     return;
   }
 
-  let modelStartTime = Date.now();
+  modelStartTime = Date.now();
   
   const time = document.getElementById("time").value;
   const hours = document.getElementById("hours").value;
@@ -465,7 +465,7 @@ function startTrajectoryPolling() {
   
     }
   
-  }, 300000);
+  }, 120000);
 }
   
   
