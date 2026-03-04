@@ -52,6 +52,7 @@ let lastModifiedSeen = null;
 let selectedPoint = null;
 let centerlineLayer = null;
 let cloudLayer = null;
+let trajectoryPoll = null;
 
 const markerGroup = L.layerGroup();
 const paLayer     = L.layerGroup();
@@ -241,23 +242,32 @@ markerGroup.addTo(map);
 paLayer.addTo(map);
   
 
-async function checkForNewOutput(startTime) {
-  const res = await fetch(`odour_data/backtraj_centerlines.geojson?nocache=${Date.now()}`, { method: "HEAD" });
-  if (!res.ok) return false;
+async function checkForNewOutput() {
 
-  const lm = res.headers.get("Last-Modified");
+  try {
 
-  if (!lastModifiedSeen) {
-    lastModifiedSeen = lm;
-    return false;
-  }
+    const res = await fetch(
+      "odour_data/backtraj_centerlines.geojson?nocache=" + Date.now(),
+      { cache: "no-store" }
+    );
 
-  if (lm !== lastModifiedSeen && Date.now() - startTime > 60000) {
-    lastModifiedSeen = lm;
+    if (!res.ok) return false;
+
+    const geo = await res.json();
+
+    if (!geo.features || geo.features.length === 0) return false;
+
+    console.log("Trajectory file ready:", geo.features.length);
+
     return true;
-  }
 
-  return false;
+  } catch (err) {
+
+    console.log("Still waiting for model output");
+
+    return false;
+
+  }
 }
 
 
@@ -421,19 +431,44 @@ async function runModel() {
 
   document.getElementById("status").innerText = "Model running… waiting for output";
 
-  const startTime = Date.now();
-
-  const poll = setInterval(async () => {
-    const ready = await checkForNewOutput(startTime);
-
-    if (ready) {
-      clearInterval(poll);
-      await loadTrajectories();
-      document.getElementById("status").innerText = "Trajectories loaded";
-    }
-  }, 15000);
+  
+  startTrajectoryPolling();
 }
 
+
+function startTrajectoryPolling() {
+
+  // stop previous polling if running
+  if (trajectoryPoll) {
+    clearInterval(trajectoryPoll);
+  }
+
+  document.getElementById("status").innerText =
+    "Model triggered — checking every 5 minutes…";
+
+  trajectoryPoll = setInterval(async () => {
+
+    console.log("Checking for trajectory output…");
+
+    const ready = await checkForNewOutput();
+
+    if (ready) {
+
+      console.log("Trajectory output found — loading.");
+
+      clearInterval(trajectoryPoll);
+      trajectoryPoll = null;
+
+      await loadTrajectories();
+
+      document.getElementById("status").innerText =
+        "Trajectories loaded";
+
+    }
+
+  }, 300000); // 5 minutes
+}
+  
   
 </script>
 
