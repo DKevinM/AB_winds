@@ -214,21 +214,17 @@ fetch("https://raw.githubusercontent.com/DKevinM/AB_winds/main/odour_data/ST102_
 */
   
 map.on("zoomend", () => {
-
   const z = map.getZoom();
-
-  if (!aerLayer) return;   // ← ADD THIS LINE
-
+  if (!aerLayer) return;   // ← prevents crash if file not loaded yet
   if (z >= 11) {
     if (!map.hasLayer(aerLayer)) {
-      aerLayer.addTo(map);
+      map.addLayer(aerLayer);
     }
   } else {
     if (map.hasLayer(aerLayer)) {
       map.removeLayer(aerLayer);
     }
   }
-
 });
 
 
