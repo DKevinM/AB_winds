@@ -214,7 +214,10 @@ fetch("odour_data/ST102_AER_web.geojson")
 */
   
 map.on("zoomend", () => {
+
   const z = map.getZoom();
+
+  if (!aerLayer) return;   // ← ADD THIS LINE
 
   if (z >= 11) {
     if (!map.hasLayer(aerLayer)) {
@@ -225,6 +228,7 @@ map.on("zoomend", () => {
       map.removeLayer(aerLayer);
     }
   }
+
 });
 
 
