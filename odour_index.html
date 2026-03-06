@@ -53,6 +53,7 @@ let selectedPoint = null;
 let centerlineLayer = null;
 let cloudLayer = null;
 let trajectoryPoll = null;
+let densityLayer = null;  
 
 const markerGroup = L.layerGroup();
 const paLayer     = L.layerGroup();
@@ -329,6 +330,11 @@ async function loadTrajectories() {
     const centerRes = await fetch("odour_data/backtraj_centerlines.geojson", { cache: "no-store" });
     const cloudRes  = await fetch("odour_data/backtraj_cloud.geojson", { cache: "no-store" });
 
+    const densityRes = await fetch("odour_data/backtraj_density.geojson", { cache: "no-store" });
+    if (!densityRes.ok) return false;
+    const densityGeo = await densityRes.json();
+    
+
     if (!centerRes.ok || !cloudRes.ok) return false;
 
     const centerGeo = await centerRes.json();
@@ -336,6 +342,7 @@ async function loadTrajectories() {
 
     if (centerlineLayer) map.removeLayer(centerlineLayer);
     if (cloudLayer) map.removeLayer(cloudLayer);
+    if (densityLayer) map.removeLayer(densityLayer);
 
     
     const density = {};
@@ -382,6 +389,30 @@ async function loadTrajectories() {
 
 
 
+    function densityColor(n){
+      if (n >= 25) return "#ff0000";
+      if (n >= 15) return "#ff6600";
+      if (n >= 8)  return "#ffaa00";
+      if (n >= 4)  return "#ffff66";
+      return "#66ccff";
+    }
+    
+    densityLayer = L.geoJSON(densityGeo, {
+      style: f => ({
+        color: "#333",
+        weight: 0.3,
+        fillColor: densityColor(f.properties.count || 0),
+        fillOpacity: 0.45
+      }),
+      onEachFeature: (feature, layer) => {
+        const n = feature.properties.count || 0;
+        layer.bindTooltip(`Relative density: ${n}`);
+      }
+    }).addTo(map);
+    
+    overlayControl.addOverlay(densityLayer, "Potential Influence Area");
+
+    
 
 
     centerlineLayer = L.geoJSON(centerGeo, {
