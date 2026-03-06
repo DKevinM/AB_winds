@@ -27,6 +27,8 @@ def lon_wrap(lon):
     return (lon + 180.0) % 360.0 - 180.0
 
 
+
+
 # ---------------------------
 # Data model
 # ---------------------------
@@ -384,6 +386,57 @@ def cloud_to_geojson(cloud_points, every_n: int = 1):
     return {"type": "FeatureCollection", "features": feats}
 
 
+def density_grid_to_geojson(cloud_points, cell_size_deg: float = 0.01, min_count: int = 1):
+    """
+    Build a simple density grid from cloud points.
+    cell_size_deg = ~0.01 deg (~1 km north-south)
+    """
+    from collections import defaultdict
+
+    counts = defaultdict(int)
+
+    def cell_index(lat, lon):
+        i = math.floor(lon / cell_size_deg)
+        j = math.floor(lat / cell_size_deg)
+        return i, j
+
+    for (t, lat, lon, z) in cloud_points:
+        i, j = cell_index(lat, lon)
+        counts[(i, j)] += 1
+
+    feats = []
+
+    for (i, j), count in counts.items():
+        if count < min_count:
+            continue
+
+        lon0 = i * cell_size_deg
+        lon1 = (i + 1) * cell_size_deg
+        lat0 = j * cell_size_deg
+        lat1 = (j + 1) * cell_size_deg
+
+        feats.append({
+            "type": "Feature",
+            "properties": {
+                "count": int(count)
+            },
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[
+                    [lon0, lat0],
+                    [lon1, lat0],
+                    [lon1, lat1],
+                    [lon0, lat1],
+                    [lon0, lat0]
+                ]]
+            }
+        })
+
+    return {
+        "type": "FeatureCollection",
+        "features": feats
+    }
+
 # ---------------------------
 # Minimal test runner
 # ---------------------------
@@ -414,11 +467,15 @@ if __name__ == "__main__":
 
     centers_gj = centerlines_to_geojson(centers)
     cloud_gj   = cloud_to_geojson(cloud, every_n=3)
-
+    density_gj = density_grid_to_geojson(cloud, cell_size_deg=0.01, min_count=2)
+    
     with open(outdir / "backtraj_centerlines.geojson", "w", encoding="utf-8") as f:
         json.dump(centers_gj, f)
-
+    
     with open(outdir / "backtraj_cloud.geojson", "w", encoding="utf-8") as f:
         json.dump(cloud_gj, f)
+    
+    with open(outdir / "backtraj_density.geojson", "w", encoding="utf-8") as f:
+        json.dump(density_gj, f)
 
     print("Model run complete for:", lat, lon, start_time, "hours:", hours)
