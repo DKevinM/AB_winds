@@ -55,6 +55,8 @@ let cloudLayer = null;
 let trajectoryPoll = null;
 let densityLayer = null;  
 
+let trajectoryLayersAdded = false;
+
 const markerGroup = L.layerGroup();
 const paLayer     = L.layerGroup();
 const npriLayerGroup = L.layerGroup();
@@ -370,8 +372,6 @@ async function loadTrajectories() {
       return "#66ccff";                // very low
     }
 
-
-    
     cloudLayer = L.geoJSON(cloudGeo, {
       pointToLayer: (f, latlng) => {
         const key = cellKey(latlng.lat, latlng.lng);
@@ -410,18 +410,18 @@ async function loadTrajectories() {
       }
     }).addTo(map);
     
-    overlayControl.addOverlay(densityLayer, "Potential Influence Area");
-
-    
-
 
     centerlineLayer = L.geoJSON(centerGeo, {
       style: { color: "#00ffff", weight: 2 }
     }).addTo(map);
     
-    overlayControl.addOverlay(centerlineLayer, "Trajectory Trend");
-    overlayControl.addOverlay(cloudLayer, "Particle Cloud");
-
+    if (!trajectoryLayersAdded) {
+      overlayControl.addOverlay(centerlineLayer, "Trajectory Trend");
+      overlayControl.addOverlay(cloudLayer, "Particle Cloud");
+      overlayControl.addOverlay(densityLayer, "Potential Influence");
+      trajectoryLayersAdded = true;
+    }
+    
     return true;
   } catch (e) {
     console.warn("Waiting for model output…");
