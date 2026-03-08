@@ -338,10 +338,10 @@ function plotNPRI(fc) {
   
 async function loadTrajectories() {
   try {
-    const centerRes = await fetch("odour_data/backtraj_centerlines.geojson", { cache: "no-store" });
-    const cloudRes  = await fetch("odour_data/backtraj_cloud.geojson", { cache: "no-store" });
-
-    const densityRes = await fetch("odour_data/backtraj_density.geojson", { cache: "no-store" });
+    const centerRes = await fetch("odour_data/backtraj_centerlines.geojson?t=" + Date.now());
+    const cloudRes  = await fetch("odour_data/backtraj_cloud.geojson?t=" + Date.now());
+    const densityRes = await fetch("odour_data/backtraj_density.geojson?t=" + Date.now());
+    
     if (!densityRes.ok) return false;
     const densityGeo = await densityRes.json();
     
