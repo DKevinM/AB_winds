@@ -103,10 +103,6 @@ const overlayControl = L.control.layers(null, {
 // -------------------------------
 // Trajectory layers (created once)
 // -------------------------------
-const centerlineLayer = L.layerGroup().addTo(map);
-const cloudLayer = L.layerGroup().addTo(map);
-const densityLayer = L.layerGroup().addTo(map);
-
 overlayControl.addOverlay(centerlineLayer, "Trajectory Trend");
 overlayControl.addOverlay(cloudLayer, "Particle Cloud");
 overlayControl.addOverlay(densityLayer, "Potential Influence");
