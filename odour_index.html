@@ -50,11 +50,7 @@
 let lastModifiedSeen = null;
 
 let selectedPoint = null;
-let centerlineLayer = null;
-let cloudLayer = null;
 let trajectoryPoll = null;
-let densityLayer = null;  
-
 let trajectoryLayersAdded = false;
 
 const markerGroup = L.layerGroup();
@@ -63,6 +59,10 @@ const npriLayerGroup = L.layerGroup();
 const NPRI_URL = "https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data/NPRI.geojson";
 const map = L.map('map').setView([53.54, -113.49], 7);
 const layerRegistry = {};
+  
+const centerlineLayer = L.layerGroup().addTo(map);
+const cloudLayer = L.layerGroup().addTo(map);
+const densityLayer = L.layerGroup().addTo(map);  
 
 
 layerRegistry["Stations"]          = markerGroup;
@@ -93,12 +93,25 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
+  c
 const overlayControl = L.control.layers(null, {
   "Stations": markerGroup,
   "PurpleAir": paLayer,
   "NPRI Facilities": npriLayerGroup
 }, { collapsed: false }).addTo(map);
 
+// -------------------------------
+// Trajectory layers (created once)
+// -------------------------------
+const centerlineLayer = L.layerGroup().addTo(map);
+const cloudLayer = L.layerGroup().addTo(map);
+const densityLayer = L.layerGroup().addTo(map);
+
+overlayControl.addOverlay(centerlineLayer, "Trajectory Trend");
+overlayControl.addOverlay(cloudLayer, "Particle Cloud");
+overlayControl.addOverlay(densityLayer, "Potential Influence");
+  
+  
 fetch(NPRI_URL)
   .then(res => res.json())
   .then(fc => {
@@ -342,9 +355,9 @@ async function loadTrajectories() {
     const centerGeo = await centerRes.json();
     const cloudGeo  = await cloudRes.json();
 
-    if (centerlineLayer) map.removeLayer(centerlineLayer);
-    if (cloudLayer) map.removeLayer(cloudLayer);
-    if (densityLayer) map.removeLayer(densityLayer);
+    centerlineLayer.clearLayers();
+    cloudLayer.clearLayers();
+    densityLayer.clearLayers();
 
     
     const density = {};
@@ -372,7 +385,7 @@ async function loadTrajectories() {
       return "#66ccff";                // very low
     }
 
-    cloudLayer = L.geoJSON(cloudGeo, {
+    L.geoJSON(cloudGeo, {
       pointToLayer: (f, latlng) => {
         const key = cellKey(latlng.lat, latlng.lng);
         const d = density[key] || 1;
@@ -385,7 +398,7 @@ async function loadTrajectories() {
           fillOpacity: 0.8
         });
       }
-    }).addTo(map);
+    }).addTo(cloudLayer);
 
 
 
@@ -397,7 +410,7 @@ async function loadTrajectories() {
       return "#66ccff";
     }
     
-    densityLayer = L.geoJSON(densityGeo, {
+    L.geoJSON(densityGeo, {
       style: f => ({
         color: "#333",
         weight: 0.3,
@@ -408,20 +421,13 @@ async function loadTrajectories() {
         const n = feature.properties.count || 0;
         layer.bindTooltip(`Relative density: ${n}`);
       }
-    }).addTo(map);
+    }).addTo(densityLayer);
     
 
-    centerlineLayer = L.geoJSON(centerGeo, {
+    L.geoJSON(centerGeo, {
       style: { color: "#00ffff", weight: 2 }
-    }).addTo(map);
-    
-    if (!trajectoryLayersAdded) {
-      overlayControl.addOverlay(centerlineLayer, "Trajectory Trend");
-      overlayControl.addOverlay(cloudLayer, "Particle Cloud");
-      overlayControl.addOverlay(densityLayer, "Potential Influence");
-      trajectoryLayersAdded = true;
-    }
-    
+    }).addTo(centerlineLayer);
+        
     return true;
   } catch (e) {
     console.warn("Waiting for model output…");
