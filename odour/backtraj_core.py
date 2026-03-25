@@ -5,8 +5,18 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional
 
 import numpy as np
+import requests
+from supabase import create_client
 
 EARTH_R = 6371000.0  # meters
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+
+supabase = None
+if SUPABASE_URL and SUPABASE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 
 
 # ---------------------------
@@ -83,25 +93,75 @@ class MetStoreV2:
     }
     """
 
-    def __init__(self, folder: str):
+    def __init__(
+        self,
+        folder: Optional[str] = None,
+        bucket: str = "winds",
+        model: str = "HRDPS",
+        use_supabase: bool = True
+    ):
         self.folder = folder
+        self.bucket = bucket
+        self.model = model
+        self.use_supabase = use_supabase
         self.snaps: List[MetSnapshot] = []
-        self._load_all()
-
+    
+        if self.use_supabase:
+            if supabase is None:
+                raise RuntimeError("SUPABASE_URL / SUPABASE_SERVICE_KEY not set")
+            self._load_all_from_supabase()
+        else:
+            if folder is None:
+                raise RuntimeError("Local folder must be provided when use_supabase=False")
+            self._load_all_local()
+    
         if not self.snaps:
-            raise RuntimeError(f"No met files found in {folder}")
-
+            raise RuntimeError("No met files loaded")
+    
         self.snaps.sort(key=lambda s: s.valid)
-        # assume consistent grid
         self.grid = self.snaps[0].grid
 
-    def _load_all(self):
+    def _load_all_local(self):
         for fn in os.listdir(self.folder):
             if not fn.endswith(".json.gz"):
                 continue
             path = os.path.join(self.folder, fn)
-            self.snaps.append(self._load_one(path))
+            self.snaps.append(self._load_one_local(path))
 
+
+
+    def _load_all_from_supabase(self):
+        resp = (
+            supabase.table("wind_files")
+            .select("file_path, valid_time")
+            .eq("model", self.model)
+            .order("valid_time")
+            .execute()
+        )
+    
+        rows = resp.data or []
+        if not rows:
+            raise RuntimeError(f"No wind_files found for model={self.model}")
+    
+        for row in rows:
+            file_path = row["file_path"]
+    
+            signed = supabase.storage.from_(self.bucket).create_signed_url(file_path, 60)
+            signed_url = signed.get("signedURL") or signed.get("signed_url")
+            if not signed_url:
+                raise RuntimeError(f"Could not create signed URL for {file_path}")
+    
+            r = requests.get(signed_url, timeout=60)
+            r.raise_for_status()
+    
+            self.snaps.append(self._load_one_bytes(r.content))
+
+
+
+
+
+
+    
     def _normalize_key(self, k: str) -> str:
         kk = k.lower().strip()
 
@@ -152,14 +212,11 @@ class MetStoreV2:
 
         raise ValueError(f"Unsupported field dims: ndim={a.ndim}, shape={a.shape}")
 
-    def _load_one(self, path: str) -> MetSnapshot:
-        with gzip.open(path, "rt", encoding="utf-8") as f:
-            obj = json.load(f)
-
+    def _parse_snapshot_obj(self, obj: dict) -> MetSnapshot:
         meta = obj["meta"]
         gridj = obj["grid"]
         fieldsj = obj["fields"]
-
+    
         grid = Grid(
             lo1=float(gridj["lo1"]),
             la1=float(gridj["la1"]),
@@ -168,12 +225,12 @@ class MetStoreV2:
             nx=int(gridj["nx"]),
             ny=int(gridj["ny"])
         )
-
+    
         norm_fields: Dict[str, np.ndarray] = {}
         for k, v in fieldsj.items():
             kk = self._normalize_key(k)
             norm_fields[kk] = self._to_grid(v, grid)
-
+    
         return MetSnapshot(
             valid=parse_iso_z(meta["valid"]),
             run=parse_iso_z(meta["run"]),
@@ -181,6 +238,17 @@ class MetStoreV2:
             grid=grid,
             fields=norm_fields
         )
+    
+    
+    def _load_one_local(self, path: str) -> MetSnapshot:
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            obj = json.load(f)
+        return self._parse_snapshot_obj(obj)
+    
+    
+    def _load_one_bytes(self, content: bytes) -> MetSnapshot:
+        obj = json.loads(gzip.decompress(content).decode("utf-8"))
+        return self._parse_snapshot_obj(obj)
 
     # ----- sampling -----
 
@@ -449,7 +517,12 @@ if __name__ == "__main__":
     start_time = dt.datetime.fromisoformat(os.environ["TIME_UTC"])
     hours = float(os.environ["HOURS"])
 
-    met = MetStoreV2("met_data")
+    met = MetStoreV2(
+        folder="met_data",
+        bucket="winds",
+        model="HRDPS",
+        use_supabase=True
+    )
 
     centers, cloud = run_back_trajectories(
         met,
