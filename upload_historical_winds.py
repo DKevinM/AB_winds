@@ -79,13 +79,18 @@ def process_file(fp):
 def main():
     files = sorted(BASE_DIR.glob("*.json.gz"))
     print(f"Found {len(files)} files")
-    BATCH_SIZE = 200   # adjust this (start small)
-    START_INDEX = 0    # change manually between runs
-    batch = files[START_INDEX:START_INDEX + BATCH_SIZE]
-    print(f"Processing batch: {START_INDEX} → {START_INDEX + BATCH_SIZE}")
-    for i, fp in enumerate(batch):
-        print(f"[{i+1}/{len(batch)}] Processing {fp.name}")
-        process_file(fp)
+    uploaded = 0
+    skipped = 0
+    for i, fp in enumerate(files):
+        print(f"[{i+1}/{len(files)}] Processing {fp.name}")
+        if process_file(fp):
+            uploaded += 1
+        else:
+            skipped += 1
+
+    print("Done.")
+    print("Uploaded:", uploaded)
+    print("Skipped:", skipped)
 
 if __name__ == "__main__":
     main()
