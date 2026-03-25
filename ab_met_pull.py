@@ -4,11 +4,74 @@ import os, json, gzip, tempfile, requests, datetime as dt
 import numpy as np
 import xarray as xr
 
+from supabase import create_client
+
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
+def wind_file_exists(file_path):
+
+    resp = supabase.table("wind_files") \
+        .select("id") \
+        .eq("file_path", file_path) \
+        .limit(1) \
+        .execute()
+
+    return len(resp.data) > 0
+
+
+def upload_to_supabase(local_path, storage_path):
+
+    with open(local_path, "rb") as f:
+        try:
+            supabase.storage.from_("winds").upload(
+                path=storage_path,
+                file=f,
+                file_options={"content-type": "application/gzip"}
+            )
+        except Exception as e:
+            if "already exists" in str(e).lower():
+                print("File already exists in storage")
+            else:
+                raise
+
+
+
+import re
+from datetime import datetime, timedelta
+
+def insert_metadata_from_run(run, lead, storage_path):
+
+    run_time = run
+    valid_time = run + timedelta(hours=lead)
+
+    supabase.table("wind_files").insert({
+        "model": "HRDPS",
+        "run_time": run_time.isoformat(),
+        "forecast_hour": lead,
+        "valid_time": valid_time.isoformat(),
+
+        "year": valid_time.year,
+        "month": valid_time.month,
+        "day": valid_time.day,
+        "hour": valid_time.hour,
+
+        "file_path": storage_path,
+        "file_format": "json.gz"
+    }).execute()
+
+
+
+
 # ================= CONFIG =================
 BASE = "https://dd.weather.gc.ca/today/model_hrdps/continental/2.5km"
 
-AB_LAT_MIN, AB_LAT_MAX = 48.5, 60.5
-AB_LON_MIN, AB_LON_MAX = -120, -108
+AB_LAT_MIN, AB_LAT_MAX = 48, 62
+AB_LON_MIN, AB_LON_MAX = -125, -100
 
 LEVELS_AGL = [10, 40, 80, 120]
 
@@ -127,6 +190,43 @@ def main():
             json.dump(payload, f)
 
         print("Saved:", fname)
+
+
+        # -------------------------------
+        # Upload to Supabase (NEW STEP)
+        # -------------------------------
+        
+        filename = os.path.basename(fname)
+        
+        # extract date for storage path
+        year  = int(run.strftime("%Y"))
+        month = int(run.strftime("%m"))
+        day   = int(run.strftime("%d"))
+        
+        valid_time = run + dt.timedelta(hours=lead)        
+        storage_path = f"hrdps/{valid_time.year}/{valid_time.month:02d}/{valid_time.day:02d}/{filename}"
+        
+        if not wind_file_exists(storage_path):
+        
+            print("Uploading to Supabase:", filename)
+        
+            try:
+                upload_to_supabase(fname, storage_path)
+                insert_metadata_from_run(run, lead, storage_path)
+        
+            except Exception as e:
+                if "already exists" in str(e):
+                    print("Skipped existing file")
+                else:
+                    raise
+        
+        else:
+            print("Already exists in Supabase:", filename)
+
+
+
+
+
 
 if __name__ == "__main__":
     main()
