@@ -1,5 +1,8 @@
-# backtraj_core_v2.py
-import os, re, json, gzip, math
+import os
+import re
+import json
+import gzip
+import math
 import datetime as dt
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional
@@ -18,25 +21,108 @@ if SUPABASE_URL and SUPABASE_KEY:
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-
 # ---------------------------
 # Helpers
 # ---------------------------
 
 def parse_iso_z(s: str) -> dt.datetime:
-    # expects "....Z"
     if s.endswith("Z"):
         s = s[:-1]
     return dt.datetime.fromisoformat(s)
 
-def clamp(x, a, b):
+
+def clamp(x: float, a: float, b: float) -> float:
     return a if x < a else b if x > b else x
 
-def lon_wrap(lon):
-    # keep [-180,180)
+
+def lon_wrap(lon: float) -> float:
     return (lon + 180.0) % 360.0 - 180.0
 
 
+def angle_diff_deg(a: float, b: float) -> float:
+    """Signed smallest difference a-b in degrees, in [-180, 180]."""
+    return ((a - b + 540.0) % 360.0) - 180.0
+
+
+def uv_to_dir_speed(u: float, v: float) -> Tuple[float, float]:
+    """
+    Convert Cartesian wind components to direction/speed.
+    Direction convention here is the direction of motion, clockwise from north.
+    """
+    speed = math.sqrt(u * u + v * v)
+    direction = (math.degrees(math.atan2(u, v)) + 360.0) % 360.0
+    return direction, speed
+
+
+def dir_speed_to_uv(direction_deg: float, speed: float) -> Tuple[float, float]:
+    """
+    Convert direction of motion + speed back to u,v.
+    """
+    rad = math.radians(direction_deg)
+    u = speed * math.sin(rad)
+    v = speed * math.cos(rad)
+    return u, v
+
+
+# ---------------------------
+# DEM hook
+# ---------------------------
+
+class DEM:
+    """
+    Placeholder DEM interface.
+
+    Replace get_elevation() with a raster lookup, database lookup,
+    or another terrain source when ready.
+    """
+    def __init__(self, path: Optional[str] = None):
+        self.path = path
+
+    def get_elevation(self, lat: float, lon: float) -> float:
+        return 0.0
+
+
+_dem = DEM()
+
+
+def set_dem(dem_obj: DEM) -> None:
+    global _dem
+    _dem = dem_obj
+
+
+def get_surface_height(lat: float, lon: float) -> float:
+    return float(_dem.get_elevation(lat, lon))
+
+
+def terrain_slope(lat: float, lon: float, step_deg: float = 0.01) -> Tuple[float, float]:
+    """
+    Approximate terrain gradient from 4 neighboring elevations.
+    Returns (dzdx, dzdy) in raw elevation differences across the chosen step.
+    """
+    e_n = get_surface_height(lat + step_deg, lon)
+    e_s = get_surface_height(lat - step_deg, lon)
+    e_e = get_surface_height(lat, lon + step_deg)
+    e_w = get_surface_height(lat, lon - step_deg)
+
+    dzdx = e_e - e_w
+    dzdy = e_n - e_s
+    return dzdx, dzdy
+
+
+def terrain_steering_direction(dzdx: float, dzdy: float) -> float:
+    """
+    Direction of downslope / valley guidance, clockwise from north.
+    """
+    return math.degrees(math.atan2(-dzdx, -dzdy)) % 360.0
+
+
+def terrain_spread_factor(start_elev: float, current_elev: float) -> float:
+    diff = current_elev - start_elev
+    if diff < -50.0:
+        return 1.2   # valley enhancement
+    if diff > 50.0:
+        return 0.7   # ridge suppression
+    return 1.0
 
 
 # ---------------------------
@@ -45,19 +131,14 @@ def lon_wrap(lon):
 
 @dataclass(frozen=True)
 class Grid:
-    lo1: float   # west lon (deg, -180..180)
-    la1: float   # north lat (deg)
-    dx: float    # lon spacing (deg, positive)
-    dy: float    # lat spacing (deg, positive)
+    lo1: float
+    la1: float
+    dx: float
+    dy: float
     nx: int
     ny: int
 
     def ij_from_latlon(self, lat: float, lon: float) -> Tuple[float, float]:
-        """
-        Earth/Nullschool-style grid:
-          i increases east from lo1
-          j increases south from la1
-        """
         i = (lon - self.lo1) / self.dx
         j = (self.la1 - lat) / self.dy
         return i, j
@@ -69,135 +150,117 @@ class MetSnapshot:
     run: dt.datetime
     lead: int
     grid: Grid
-    fields: Dict[str, np.ndarray]  # key -> (ny,nx) float32
+    fields: Dict[str, np.ndarray]
 
 
 # ---------------------------
-# Met store (loads your *.json.gz)
+# Met store
 # ---------------------------
 
 class MetStoreV2:
-    """
-    Expects your met files like:
-    {
-      "meta": {"run": "...Z", "valid": "...Z", "lead": 0},
-      "grid": {"lo1":..., "la1":..., "dx":..., "dy":..., "nx":..., "ny":...},
-      "fields": {
-         "ugrd10": [[[...]]],   # usually (1,ny,nx) or (ny,nx)
-         "vgrd10": [[[...]]],
-         ...
-         "hpbl":  [[[...]]],
-         "rh2m":  [[[...]]],
-         "dpt2m": [[[...]]]
-      }
-    }
-    """
-
     def __init__(
         self,
         folder: Optional[str] = None,
         bucket: str = "winds",
         model: str = "HRDPS",
-        use_supabase: bool = True
+        use_supabase: bool = True,
+        target_time: Optional[dt.datetime] = None,
+        window_hours: int = 6
     ):
         self.folder = folder
         self.bucket = bucket
         self.model = model
         self.use_supabase = use_supabase
+        self.window_hours = window_hours
+        self.cache: Dict[str, bytes] = {}
         self.snaps: List[MetSnapshot] = []
-    
+
         if self.use_supabase:
             if supabase is None:
                 raise RuntimeError("SUPABASE_URL / SUPABASE_SERVICE_KEY not set")
-            self._load_all_from_supabase()
+            if target_time is None:
+                raise RuntimeError("target_time required when using Supabase")
+            self._load_all_from_supabase(target_time, window_hours=self.window_hours)
         else:
             if folder is None:
                 raise RuntimeError("Local folder must be provided when use_supabase=False")
             self._load_all_local()
-    
+
         if not self.snaps:
             raise RuntimeError("No met files loaded")
-    
+
         self.snaps.sort(key=lambda s: s.valid)
         self.grid = self.snaps[0].grid
 
-    def _load_all_local(self):
+    def _load_all_local(self) -> None:
         for fn in os.listdir(self.folder):
             if not fn.endswith(".json.gz"):
                 continue
             path = os.path.join(self.folder, fn)
             self.snaps.append(self._load_one_local(path))
 
+    def _load_all_from_supabase(self, target_time: dt.datetime, window_hours: int = 6) -> None:
+        t0 = target_time - dt.timedelta(hours=window_hours)
+        t1 = target_time + dt.timedelta(hours=window_hours)
 
-
-    def _load_all_from_supabase(self):
         resp = (
             supabase.table("wind_files")
             .select("file_path, valid_time")
             .eq("model", self.model)
+            .gte("valid_time", t0.isoformat())
+            .lte("valid_time", t1.isoformat())
             .order("valid_time")
             .execute()
         )
-    
+
         rows = resp.data or []
         if not rows:
-            raise RuntimeError(f"No wind_files found for model={self.model}")
-    
+            raise RuntimeError(f"No wind files found for model={self.model} in requested time window")
+
         for row in rows:
             file_path = row["file_path"]
-    
+
             signed = supabase.storage.from_(self.bucket).create_signed_url(file_path, 60)
             signed_url = signed.get("signedURL") or signed.get("signed_url")
             if not signed_url:
                 raise RuntimeError(f"Could not create signed URL for {file_path}")
-    
-            r = requests.get(signed_url, timeout=60)
-            r.raise_for_status()
-    
-            self.snaps.append(self._load_one_bytes(r.content))
 
+            if file_path in self.cache:
+                content = self.cache[file_path]
+            else:
+                r = requests.get(signed_url, timeout=60)
+                r.raise_for_status()
+                content = r.content
+                self.cache[file_path] = content
 
+            self.snaps.append(self._load_one_bytes(content))
 
+        print(f"Loaded {len(self.snaps)} wind snapshots from Supabase")
 
-
-
-    
     def _normalize_key(self, k: str) -> str:
         kk = k.lower().strip()
 
-        # winds: ugrd10, vgrd40, etc -> u10, v40
         m = re.match(r"^(u|v)grd\D*(10|40|80|120)\D*$", kk)
         if m:
             return f"{m.group(1)}{m.group(2)}"
 
-        # sometimes you might have "ugrd10m" etc
         m2 = re.match(r"^(u|v)\D*(10|40|80|120)\D*$", kk)
         if m2:
             return f"{m2.group(1)}{m2.group(2)}"
 
-        # pbl height
         if kk in ("hpbl", "pblh", "hpblsfc", "hpbl_sfc"):
             return "hpbl"
 
-        # RH and dewpoint near-sfc
         if kk in ("rh2m", "rh_2m", "rhagl2m"):
             return "rh2m"
+
         if kk in ("dpt2m", "dpt_2m", "td2m"):
             return "dpt2m"
 
         return kk
 
     def _to_grid(self, arr, grid: Grid) -> np.ndarray:
-        """
-        Accepts arr shaped:
-          - (1,ny,nx)
-          - (ny,nx)
-          - (ny*nx,)
-        Returns (ny,nx) float32.
-        """
         a = np.asarray(arr, dtype=np.float32)
-
-        # drop any leading singleton dims: (1,ny,nx) -> (ny,nx)
         a = np.squeeze(a)
 
         if a.ndim == 2:
@@ -207,7 +270,7 @@ class MetStoreV2:
 
         if a.ndim == 1:
             if a.size != grid.ny * grid.nx:
-                raise ValueError(f"1D field size mismatch: {a.size} != {grid.ny*grid.nx}")
+                raise ValueError(f"1D field size mismatch: {a.size} != {grid.ny * grid.nx}")
             return a.reshape((grid.ny, grid.nx))
 
         raise ValueError(f"Unsupported field dims: ndim={a.ndim}, shape={a.shape}")
@@ -216,44 +279,41 @@ class MetStoreV2:
         meta = obj["meta"]
         gridj = obj["grid"]
         fieldsj = obj["fields"]
-    
+
         grid = Grid(
             lo1=float(gridj["lo1"]),
             la1=float(gridj["la1"]),
             dx=float(gridj["dx"]),
             dy=float(gridj["dy"]),
             nx=int(gridj["nx"]),
-            ny=int(gridj["ny"])
+            ny=int(gridj["ny"]),
         )
-    
+
         norm_fields: Dict[str, np.ndarray] = {}
         for k, v in fieldsj.items():
             kk = self._normalize_key(k)
             norm_fields[kk] = self._to_grid(v, grid)
-    
+
         return MetSnapshot(
             valid=parse_iso_z(meta["valid"]),
             run=parse_iso_z(meta["run"]),
             lead=int(meta.get("lead", 0)),
             grid=grid,
-            fields=norm_fields
+            fields=norm_fields,
         )
-    
-    
+
     def _load_one_local(self, path: str) -> MetSnapshot:
         with gzip.open(path, "rt", encoding="utf-8") as f:
             obj = json.load(f)
         return self._parse_snapshot_obj(obj)
-    
-    
+
     def _load_one_bytes(self, content: bytes) -> MetSnapshot:
         obj = json.loads(gzip.decompress(content).decode("utf-8"))
         return self._parse_snapshot_obj(obj)
 
-    # ----- sampling -----
-
     def _bracket(self, t: dt.datetime) -> Tuple[MetSnapshot, MetSnapshot, float]:
         snaps = self.snaps
+
         if t <= snaps[0].valid:
             return snaps[0], snaps[0], 0.0
         if t >= snaps[-1].valid:
@@ -275,7 +335,6 @@ class MetStoreV2:
     def _bilinear(self, grid: Grid, field: np.ndarray, lat: float, lon: float) -> float:
         i, j = grid.ij_from_latlon(lat, lon)
 
-        # clamp inside grid
         i = clamp(i, 0.0, grid.nx - 1.000001)
         j = clamp(j, 0.0, grid.ny - 1.000001)
 
@@ -297,10 +356,6 @@ class MetStoreV2:
         return v0 * (1 - fj) + v1 * fj
 
     def sample(self, t: dt.datetime, lat: float, lon: float, z_m: float) -> Dict[str, float]:
-        """
-        Sample met at (t,lat,lon,z).
-        Returns u,v (m/s) at nearest layer among 10/40/80/120 plus hpbl if present.
-        """
         s0, s1, a = self._bracket(t)
         g = s0.grid
 
@@ -324,7 +379,11 @@ class MetStoreV2:
         if u is None or v is None:
             raise KeyError(f"Missing winds: need {ukey} and {vkey}")
 
-        out = {"u": float(u), "v": float(v), "zlayer": float(zpick)}
+        out = {
+            "u": float(u),
+            "v": float(v),
+            "zlayer": float(zpick),
+        }
         if hpbl is not None and np.isfinite(hpbl):
             out["hpbl"] = float(hpbl)
         return out
@@ -338,16 +397,44 @@ class MetStoreV2:
 class ParticleState:
     lat: float
     lon: float
-    z_m: float
+    z_m: float  # treated as meters above local ground
+
 
 def advect_latlon(lat: float, lon: float, u: float, v: float, dt_s: float) -> Tuple[float, float]:
-    """
-    Convert (u,v) m/s to (dlat,dlon) degrees over dt.
-    """
     lat_rad = math.radians(lat)
     dlat = (v * dt_s) / EARTH_R * (180.0 / math.pi)
     dlon = (u * dt_s) / (EARTH_R * max(1e-8, math.cos(lat_rad))) * (180.0 / math.pi)
     return lat + dlat, lon_wrap(lon + dlon)
+
+
+def apply_terrain_steering(
+    lat: float,
+    lon: float,
+    u: float,
+    v: float,
+    terrain_strength: float = 0.30,
+    max_turn_deg: float = 20.0,
+    slope_step_deg: float = 0.01
+) -> Tuple[float, float]:
+    """
+    Nudge flow toward downslope / valley guidance.
+    Terrain effect weakens with stronger wind speeds.
+    """
+    wind_dir, speed = uv_to_dir_speed(u, v)
+    if speed <= 0.01:
+        return u, v
+
+    dzdx, dzdy = terrain_slope(lat, lon, step_deg=slope_step_deg)
+    slope_dir = terrain_steering_direction(dzdx, dzdy)
+
+    diff = angle_diff_deg(slope_dir, wind_dir)
+
+    terrain_factor = max(0.0, 1.0 - speed / 8.0)
+    adjust = clamp(diff * terrain_factor * terrain_strength, -max_turn_deg, max_turn_deg)
+
+    new_dir = (wind_dir + adjust) % 360.0
+    return dir_speed_to_uv(new_dir, speed)
+
 
 def run_back_trajectories(
     met: MetStoreV2,
@@ -361,17 +448,13 @@ def run_back_trajectories(
     horiz_sigma_ms: float = 0.35,
     vert_sigma_ms: float = 0.10,
     use_pbl_cap: bool = True,
-    seed: int = 12345
+    seed: int = 12345,
+    use_terrain_steering: bool = True
 ):
-    """
-    Backward Lagrangian ensemble:
-      - integrate from start_time_utc backward for 'hours'
-      - RK2 midpoint
-      - stochastic u/v perturbations to represent uncertainty
-      - vertical random-walk with optional PBL cap
-    """
     n_steps = int((hours * 3600) // dt_s)
     rng = np.random.default_rng(seed)
+
+    start_elev = get_surface_height(start_lat, start_lon)
 
     centerlines = []
     cloud_points = []
@@ -385,10 +468,9 @@ def run_back_trajectories(
 
             lat_c = float(np.mean([p.lat for p in parts]))
             lon_c = float(np.mean([p.lon for p in parts]))
-            z_c   = float(np.mean([p.z_m for p in parts]))
+            z_c = float(np.mean([p.z_m for p in parts]))
             track_center.append((t, lat_c, lon_c, z_c))
 
-            # cloud downsample
             if k % 5 == 0:
                 for p in parts:
                     cloud_points.append((t, p.lat, p.lon, p.z_m))
@@ -397,21 +479,39 @@ def run_back_trajectories(
                 break
 
             for p in parts:
-                # RK2 midpoint (backward => negate winds)
-                m1 = met.sample(t, p.lat, p.lon, p.z_m)
-                u1 = -m1["u"] + rng.normal(0, horiz_sigma_ms)
-                v1 = -m1["v"] + rng.normal(0, horiz_sigma_ms)
+                terrain_now = get_surface_height(p.lat, p.lon)
+                spread_factor = terrain_spread_factor(start_elev, terrain_now)
+
+                z_asl = terrain_now + p.z_m
+                m1 = met.sample(t, p.lat, p.lon, z_asl)
+
+                u1 = -m1["u"] + rng.normal(0, horiz_sigma_ms * spread_factor)
+                v1 = -m1["v"] + rng.normal(0, horiz_sigma_ms * spread_factor)
+
+                if use_terrain_steering:
+                    u1, v1 = apply_terrain_steering(p.lat, p.lon, u1, v1)
 
                 lat_mid, lon_mid = advect_latlon(p.lat, p.lon, u1, v1, dt_s * 0.5)
 
-                m2 = met.sample(t - dt.timedelta(seconds=dt_s * 0.5), lat_mid, lon_mid, p.z_m)
-                u2 = -m2["u"] + rng.normal(0, horiz_sigma_ms)
-                v2 = -m2["v"] + rng.normal(0, horiz_sigma_ms)
+                terrain_mid = get_surface_height(lat_mid, lon_mid)
+                z_mid_asl = terrain_mid + p.z_m
+
+                m2 = met.sample(
+                    t - dt.timedelta(seconds=dt_s * 0.5),
+                    lat_mid,
+                    lon_mid,
+                    z_mid_asl
+                )
+
+                u2 = -m2["u"] + rng.normal(0, horiz_sigma_ms * spread_factor)
+                v2 = -m2["v"] + rng.normal(0, horiz_sigma_ms * spread_factor)
+
+                if use_terrain_steering:
+                    u2, v2 = apply_terrain_steering(lat_mid, lon_mid, u2, v2)
 
                 lat_new, lon_new = advect_latlon(p.lat, p.lon, u2, v2, dt_s)
 
-                # vertical random walk (meters-ish)
-                z_new = p.z_m + rng.normal(0.0, vert_sigma_ms) * dt_s
+                z_new = p.z_m + rng.normal(0.0, vert_sigma_ms * math.sqrt(dt_s) * spread_factor)
 
                 if use_pbl_cap and "hpbl" in m2 and np.isfinite(m2["hpbl"]):
                     hpbl = max(20.0, float(m2["hpbl"]))
@@ -437,9 +537,10 @@ def centerlines_to_geojson(centerlines):
         feats.append({
             "type": "Feature",
             "properties": {"z0_m": c["z0"]},
-            "geometry": {"type": "LineString", "coordinates": coords}
+            "geometry": {"type": "LineString", "coordinates": coords},
         })
     return {"type": "FeatureCollection", "features": feats}
+
 
 def cloud_to_geojson(cloud_points, every_n: int = 1):
     feats = []
@@ -449,16 +550,12 @@ def cloud_to_geojson(cloud_points, every_n: int = 1):
         feats.append({
             "type": "Feature",
             "properties": {"t": t.isoformat() + "Z", "z_m": float(z)},
-            "geometry": {"type": "Point", "coordinates": [float(lon), float(lat)]}
+            "geometry": {"type": "Point", "coordinates": [float(lon), float(lat)]},
         })
     return {"type": "FeatureCollection", "features": feats}
 
 
 def density_grid_to_geojson(cloud_points, cell_size_deg: float = 0.01, min_count: int = 1):
-    """
-    Build a simple density grid from cloud points.
-    cell_size_deg = ~0.01 deg (~1 km north-south)
-    """
     from collections import defaultdict
 
     counts = defaultdict(int)
@@ -485,9 +582,7 @@ def density_grid_to_geojson(cloud_points, cell_size_deg: float = 0.01, min_count
 
         feats.append({
             "type": "Feature",
-            "properties": {
-                "count": int(count)
-            },
+            "properties": {"count": int(count)},
             "geometry": {
                 "type": "Polygon",
                 "coordinates": [[
@@ -495,33 +590,34 @@ def density_grid_to_geojson(cloud_points, cell_size_deg: float = 0.01, min_count
                     [lon1, lat0],
                     [lon1, lat1],
                     [lon0, lat1],
-                    [lon0, lat0]
-                ]]
-            }
+                    [lon0, lat0],
+                ]],
+            },
         })
 
-    return {
-        "type": "FeatureCollection",
-        "features": feats
-    }
+    return {"type": "FeatureCollection", "features": feats}
+
 
 # ---------------------------
 # Minimal test runner
 # ---------------------------
 
 if __name__ == "__main__":
-    import os
-
     lat = float(os.environ["LAT"])
     lon = float(os.environ["LON"])
     start_time = dt.datetime.fromisoformat(os.environ["TIME_UTC"])
     hours = float(os.environ["HOURS"])
 
+    # Replace with real DEM object when ready:
+    # set_dem(MyRasterDEM("dem.tif"))
+
     met = MetStoreV2(
         folder="met_data",
         bucket="winds",
         model="HRDPS",
-        use_supabase=True
+        use_supabase=True,
+        target_time=start_time,
+        window_hours=6,
     )
 
     centers, cloud = run_back_trajectories(
@@ -531,23 +627,24 @@ if __name__ == "__main__":
         start_time_utc=start_time,
         hours=hours,
         dt_s=60,
-        n_particles=150
+        n_particles=150,
     )
 
     from pathlib import Path
+
     outdir = Path("odour_data")
     outdir.mkdir(parents=True, exist_ok=True)
 
     centers_gj = centerlines_to_geojson(centers)
-    cloud_gj   = cloud_to_geojson(cloud, every_n=3)
+    cloud_gj = cloud_to_geojson(cloud, every_n=3)
     density_gj = density_grid_to_geojson(cloud, cell_size_deg=0.01, min_count=2)
-    
+
     with open(outdir / "backtraj_centerlines.geojson", "w", encoding="utf-8") as f:
         json.dump(centers_gj, f)
-    
+
     with open(outdir / "backtraj_cloud.geojson", "w", encoding="utf-8") as f:
         json.dump(cloud_gj, f)
-    
+
     with open(outdir / "backtraj_density.geojson", "w", encoding="utf-8") as f:
         json.dump(density_gj, f)
 
