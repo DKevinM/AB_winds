@@ -13,33 +13,70 @@ async function getLatestWindFile() {
     `${SUPABASE_URL}/rest/v1/wind_files?order=valid_time.desc&limit=1`,
     {
       headers: {
-        apikey: API_KEY
+        apikey: API_KEY,
+        Authorization: `Bearer ${API_KEY}`
       }
     }
   );
-
+  if (!res.ok) {
+    console.error("Supabase query failed:", res.status);
+    return null;
+  }
   const data = await res.json();
+  if (!data.length) {
+    console.warn("No wind files returned");
+    return null;
+  }
   return data[0];
 }
+
+
+
+async function findClosestWindFile(timeISO) {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/wind_files?valid_time=lte.${timeISO}&order=valid_time.desc&limit=1`,
+    {
+      headers: {
+        apikey: API_KEY,
+        Authorization: `Bearer ${API_KEY}`
+      }
+    }
+  );
+  if (!res.ok) {
+    console.error("Supabase query failed:", res.status);
+    return null;
+  }
+  const data = await res.json();
+  if (!data.length) {
+    console.warn("No wind files returned");
+    return null;
+  }
+  return data[0];
+}
+
 
 // fetch + unzip
 async function fetchWindFile(storagePath) {
   const url = `${SUPABASE_URL}/storage/v1/object/public/winds/${storagePath}`;
-
   const res = await fetch(url);
+  if (!res.ok) {
+    console.error("Wind file fetch failed:", url);
+    return null;
+  }
   const buffer = await res.arrayBuffer();
-
   const decompressed = pako.inflate(new Uint8Array(buffer), { to: 'string' });
   return JSON.parse(decompressed);
 }
+
+
 
 // extract wind at point
 function extractWindAtPoint(data, lat, lon) {
   const grid = data.grid;
   const fields = data.fields;
-
-  const i = Math.round((lon - grid.lo1) / grid.dx);
-  const j = Math.round((grid.la1 - lat) / grid.dy);
+  
+  const i = Math.floor((lon - grid.lo1) / grid.dx);
+  const j = Math.floor((grid.la1 - lat) / grid.dy);
 
   if (i < 0 || j < 0 || i >= grid.nx || j >= grid.ny) return null;
 
