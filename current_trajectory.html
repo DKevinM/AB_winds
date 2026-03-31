@@ -64,7 +64,10 @@
   // ─────────────────────────────────────────
   // Map setup
   // ─────────────────────────────────────────
-  const map = L.map('map').setView([53.5, -113.5], 6);
+  map.fitBounds([
+    [48, -125],
+    [62, -100]
+  ]);
 
 
   const legend = L.control({ position: "bottomleft" });
@@ -150,12 +153,6 @@
 
   L.control.layers(baseMaps, overlayMaps, { collapsed: false }).addTo(map);
 
-  // ─────────────────────────────────────────
-  // Wind from Open-Meteo
-  // ─────────────────────────────────────────
-  let lastWind = { u: 8, v: 1, ws: 5.0, wdDeg: 270 };
-  let lastWindSeries = [];
-  let wGlobal = null;
   
 
   function decodeTerrarium(r, g, b) {
@@ -625,8 +622,8 @@
         // then calculate distance
         const distKm = turf.distance(receptorPoint, cellPoint, {units:"kilometers"});
       
-        const ws = Number.isFinite(lastWind.ws) ? lastWind.ws.toFixed(1) : "N/A";
-        const wd = Number.isFinite(lastWind.wdDeg) ? lastWind.wdDeg.toFixed(0) : "N/A";        
+        const ws = "N/A";
+        const wd = "N/A";    
         
         L.rectangle(bounds,{
           weight:0,
