@@ -55,8 +55,9 @@ async function findClosestWindFile(timeISO) {
 }
 
 
-// fetch + unzip
+// fetch 
 async function fetchWindFile(storagePath) {
+
   const url = `${SUPABASE_URL}/storage/v1/object/public/winds/${storagePath}`;
 
   console.log("Fetching:", url);
@@ -71,13 +72,25 @@ async function fetchWindFile(storagePath) {
   const buffer = await res.arrayBuffer();
 
   try {
+    // TRY decompressing
     const decompressed = pako.inflate(new Uint8Array(buffer), { to: 'string' });
     return JSON.parse(decompressed);
+
   } catch (err) {
-    console.error("Decompression failed:", err);
-    return null;
+    console.warn("Not gzipped, trying plain JSON...");
+
+    try {
+      // FALLBACK: treat as plain JSON
+      const text = new TextDecoder().decode(buffer);
+      return JSON.parse(text);
+
+    } catch (err2) {
+      console.error("Both gzip and JSON parse failed:", err2);
+      return null;
+    }
   }
 }
+
 
 
 
