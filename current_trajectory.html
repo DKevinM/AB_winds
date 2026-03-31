@@ -1,0 +1,1037 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Air Origin Map (GitHub-only)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <script src="wind_fetch.js"></script>
+  <script src="trajectory.js"></script>
+  
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+    .info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      background: rgba(255,255,255,0.9);
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-family: system-ui, Arial, sans-serif;
+      font-size: 13px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.2);
+      max-width: 320px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="map"></div>
+<div class="info">
+  Click the map to compute a simple backward trajectory ensemble (in browser).<br>
+  Wind comes from HRDPS (High Resolution Deterministic Prediction System, MSS, ECCC)
+</div>
+
+
+    
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Turf.js (for distance, points, etc.) -->
+<script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+  
+<script src="https://unpkg.com/esri-leaflet@3.0.11/dist/esri-leaflet.js"></script>
+
+<!-- Your shared data loader -->
+<script src="origin-data.js"></script>
+
+
+<script>
+  // ─────────────────────────────────────────
+  // Map setup
+  // ─────────────────────────────────────────
+  const map = L.map('map').setView([53.5, -113.5], 6);
+
+
+  const legend = L.control({ position: "bottomleft" });
+  
+  legend.onAdd = function () {
+  
+    const div = L.DomUtil.create("div", "legend");
+  
+
+    div.innerHTML = `
+    <b>Trajectory Layers</b><br>
+    <span style="color:#2c7fb8">●</span> Surface trace (10 m)<br>
+    <span style="color:#41ab5d">●</span> Mixed trace (100 m)<br>
+    <span style="color:#de2d26">●</span> Aloft trace (100 m fast flow)<br>
+    <span style="color:#8c510a">●</span> Surface touchdown bubbles<br>
+    <span style="color:#000">⋯</span> Centerline
+    `;
+  
+    return div;
+  
+  };
+  
+  legend.addTo(map);
+
+
+
+  
+  
+  const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 16,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  // DEM terrain tiles (Mapzen / AWS Terrain)
+  const demLayer = L.tileLayer(
+    "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
+    {
+      attribution: "Terrain DEM",
+      opacity: 0.4
+    }).addTo(map);
+ 
+
+  // const hrdpsLayer = L.tileLayer.wms("https://geo.weather.gc.ca/geomet/?lang=en", {
+  //   layers: "HRDPS.CONTINENTAL_WSPD",
+  //   format: "image/png",
+  //   transparent: true,
+  //   opacity: 0.5
+  // }).addTo(map);
+
+
+  const centerlineLayer = L.layerGroup();
+  
+  const surfaceTrajLayer = L.layerGroup().addTo(map);
+  const mixedTrajLayer   = L.layerGroup();
+  const aloftTrajLayer   = L.layerGroup();
+  
+  const touchdownLayer   = L.layerGroup();
+  const receptorLayer = L.layerGroup().addTo(map);
+  const surfaceProbLayer = L.layerGroup().addTo(map);
+  
+  const stationLayerGroup = L.layerGroup().addTo(map);  // AQHI stations
+  const purpleLayerGroup  = L.layerGroup().addTo(map);  // PurpleAir
+  const npriLayerGroup    = L.layerGroup().addTo(map);  // NPRI facilities
+
+  const baseMaps = {
+    "OpenStreetMap": osmLayer
+  };
+
+  const overlayMaps = {
+    "Surface Trajectory (10 m)": surfaceTrajLayer,
+    "Mixed Layer Trajectory (100 m)": mixedTrajLayer,
+    "Aloft Trajectory (100 m fast flow)": aloftTrajLayer,
+    "Surface Touchdowns": touchdownLayer,
+    "Surface Probability Grid": surfaceProbLayer,
+    "Centerline": centerlineLayer,
+    
+    "AQHI Stations": stationLayerGroup,
+    "PurpleAir Sensors": purpleLayerGroup,
+    "NPRI Facilities": npriLayerGroup,
+    "Terrain (DEM)": demLayer
+    // "HRDPS Wind (WMS)": hrdpsLayer
+  };
+
+  L.control.layers(baseMaps, overlayMaps, { collapsed: false }).addTo(map);
+
+  // ─────────────────────────────────────────
+  // Wind from Open-Meteo
+  // ─────────────────────────────────────────
+  let lastWind = { u: 8, v: 1, ws: 5.0, wdDeg: 270 };
+  let lastWindSeries = [];
+  let wGlobal = null;
+  
+
+  function decodeTerrarium(r, g, b) {
+    return (r * 256 + g + b / 256) - 32768;
+  }
+
+  const elevationCache = new Map();
+
+  async function getElevation(lat, lon, zoom = 10) {
+    const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+    if (elevationCache.has(key)) {
+      return elevationCache.get(key);
+    }
+  
+    const latRad = lat * Math.PI / 180;
+    const n = Math.pow(2, zoom);
+  
+    const xFloat = (lon + 180) / 360 * n;
+    const yFloat =
+      (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n;
+  
+    const xTile = Math.floor(xFloat);
+    const yTile = Math.floor(yFloat);
+  
+    const xPixel = Math.floor((xFloat - xTile) * 256);
+    const yPixel = Math.floor((yFloat - yTile) * 256);
+  
+    const url = `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${zoom}/${xTile}/${yTile}.png`;
+  
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.src = url;
+    await img.decode();
+  
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 256;
+  
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+  
+    const pixel = ctx.getImageData(xPixel, yPixel, 1, 1).data;
+    const elev = decodeTerrarium(pixel[0], pixel[1], pixel[2]);
+  
+    elevationCache.set(key, elev);
+  
+    return elev;
+  }
+
+
+  async function terrainSteering(lat, lon, windDirDeg) {
+  
+    const step = 0.02; // ~1 km
+  
+    // const elevC = await getElevation(lat, lon);
+    const elevN = await getElevation(lat + step, lon);
+    const elevS = await getElevation(lat - step, lon);
+    const elevE = await getElevation(lat, lon + step);
+    const elevW = await getElevation(lat, lon - step);
+  
+    const dzdx = elevE - elevW;
+    const dzdy = elevN - elevS;
+  
+    const slopeDir = (Math.atan2(-dzdx, -dzdy) * 180 / Math.PI + 360) % 360;
+  
+    const diff = ((slopeDir - windDirDeg + 540) % 360) - 180;
+  
+    return diff;
+  }  
+  
+  
+
+  // ─────────────────────────────────────────
+  // Generic helper: get lat/lon from feature
+  // ─────────────────────────────────────────
+  function getFeatureLatLon(src) {
+    if (!src) return null;
+    const g = src.geometry || {};
+
+    // GeoJSON Point
+    if (g.type === "Point" && Array.isArray(g.coordinates)) {
+      const lon = Number(g.coordinates[0]);
+      const lat = Number(g.coordinates[1]);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        return { lat, lon };
+      }
+    }
+
+    // Esri-style
+    if (typeof g.x === "number" && typeof g.y === "number") {
+      const lon = Number(g.x);
+      const lat = Number(g.y);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        return { lat, lon };
+      }
+    }
+
+    // properties fall-back
+    const p = src.properties || {};
+
+    const candLat =
+      p.lat ??
+      p.latitude ??
+      p.Latitude ??
+      p.LATITUDE ??
+      p.LAT ??
+      p.y ??
+      p.Y;
+
+    const candLon =
+      p.lon ??
+      p.lng ??
+      p.longitude ??
+      p.Longitude ??
+      p.LONGITUDE ??
+      p.LON ??
+      p.x ??
+      p.X;
+
+    const lat = Number(candLat);
+    const lon = Number(candLon);
+
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      return { lat, lon };
+    }
+
+    return null;
+  }
+
+  // ─────────────────────────────────────────
+  // Station / Purple / NPRI plotting
+  // ─────────────────────────────────────────
+
+  function buildStationParamLines(p) {
+    const lines = [];
+
+    function addParam(label, keys, unit) {
+      let raw = null;
+      for (const k of keys) {
+        if (p[k] !== undefined && p[k] !== null) {
+          raw = p[k];
+          break;
+        }
+      }
+      if (raw === null || raw === undefined) return;
+      const val = parseFloat(raw);
+      if (!Number.isFinite(val)) return;
+      lines.push(`${label}: ${val.toFixed(2)} ${unit}`);
+    }
+
+    addParam("SO\u2082",  ["SO2", "so2"], "ppb");
+    addParam("NO\u2082",  ["NO2", "no2"], "ppb");
+    addParam("NO",       ["NO", "no"],    "ppb");
+    addParam("NOx",      ["NOX", "NOx", "nox"], "ppb");
+    addParam("O\u2083",  ["O3", "o3"],    "ppb");
+    addParam("PM\u2082.\u2085", ["pm25", "PM2_5", "PM2.5", "pm_25"], "µg/m³");
+    addParam("CO",       ["CO", "co"],    "ppm");
+
+    return lines;
+  }
+
+  function plotStations(fc) {
+    stationLayerGroup.clearLayers();
+    if (!fc || !Array.isArray(fc.features)) return;
+
+    fc.features.forEach(f => {
+      const ll = getFeatureLatLon(f);
+      if (!ll) return;
+
+      const p  = f.properties || {};
+      const nm = p.stationName || p.StationName || "Station";
+      let aq   = p.aqhi ?? p.AQHI ?? "N/A";
+      if (!isNaN(+aq)) {
+        const v = +aq;
+        aq = v > 10 ? "10+" : v.toFixed(0);
+      }
+
+      const paramLines = buildStationParamLines(p);
+      const paramsHtml = paramLines.length
+        ? "<br>" + paramLines.join("<br>")
+        : "";
+
+      L.circleMarker([ll.lat, ll.lon], {
+        radius: 5,
+        color: "#0066cc",
+        weight: 1,
+        fillOpacity: 0.8
+      })
+        .bindPopup(`<b>${nm}</b><br>AQHI: ${aq}${paramsHtml}`)
+        .addTo(stationLayerGroup);
+    });
+
+    console.log("[origin] plotted stations:", fc.features.length);
+  }
+
+  function plotPurple(fc) {
+    purpleLayerGroup.clearLayers();
+    if (!fc || !Array.isArray(fc.features)) return;
+
+    fc.features.forEach(f => {
+      const ll = getFeatureLatLon(f);
+      if (!ll) return;
+
+      const p  = f.properties || {};
+      const nm = p.name || p.Label || p.label || "PurpleAir";
+      const pmRaw = p.pm_corr ?? p.pm25 ?? p.PM2_5 ?? p["pm2.5"] ?? "N/A";
+
+      let pmStr = pmRaw;
+      const pmVal = parseFloat(pmRaw);
+      if (Number.isFinite(pmVal)) {
+        pmStr = pmVal.toFixed(2);
+      }
+
+      L.circleMarker([ll.lat, ll.lon], {
+        radius: 4,
+        color: "#8000ff",
+        weight: 1,
+        fillOpacity: 0.7
+      })
+        .bindPopup(`<b>${nm}</b><br>PM2.5: ${pmStr} µg/m³`)
+        .addTo(purpleLayerGroup);
+    });
+
+    console.log("[origin] plotted PurpleAir:", fc.features.length);
+  }
+
+  function plotNPRI(fc) {
+    npriLayerGroup.clearLayers();
+    if (!fc || !Array.isArray(fc.features)) return;
+
+    fc.features.forEach(f => {
+      const ll = getFeatureLatLon(f);
+      if (!ll) return;
+
+      const p   = f.properties || {};
+      const fac = p.FACILITY_NAME || p.FacilityName || p.facility || "Facility";
+      const co  = p.COMPANY_NAME  || p.Company      || p.company  || "";
+      const yr  = p.REPORTING_YEAR || p.ReportingYear || p.year || "";
+      const label = co ? `${fac} (${co})` : fac;
+
+      L.circleMarker([ll.lat, ll.lon], {
+        radius: 4,
+        color: "#cc0000",
+        weight: 1,
+        fillOpacity: 0.8
+      })
+        .bindPopup(`
+          <b>${label}</b><br>
+          ${yr ? "Year: " + yr + "<br>" : ""}
+          <small>${ll.lat.toFixed(4)}, ${ll.lon.toFixed(4)}</small>
+        `)
+        .addTo(npriLayerGroup);
+    });
+
+    console.log("[origin] plotted NPRI:", fc.features.length);
+  }
+
+  // ─────────────────────────────────────────
+  // Load FCs (from origin-data.js)
+  // ─────────────────────────────────────────
+  Promise.all([
+    window.stationsFCReady,
+    window.purpleFCReady,
+    window.npriFCReady
+  ]).then(() => {
+    console.log(
+      "[origin init] FC sizes:",
+      window.STATIONS_FC.features.length, "stations,",
+      window.PURPLE_FC.features.length,   "purple,",
+      window.NPRI_FC.features.length,     "npri"
+    );
+
+    plotStations(window.STATIONS_FC);
+    plotPurple(window.PURPLE_FC);
+    plotNPRI(window.NPRI_FC);
+  }).catch(err => {
+    console.error("[origin init] error plotting layers", err);
+  });
+
+
+  // ─────────────────────────────────────────
+  // Simple ensemble using your back-trajectory stepper
+  // ─────────────────────────────────────────
+  async function computeEnsembleTrajectories(startLat, startLon, wind, options = {}) {
+    const nParticles = options.nParticles ?? 30;
+    const hoursBack = options.hoursBack ?? 3;
+    const dtMinutes = options.dtMinutes ?? 10;    
+    const startElevation = options.startElevation ?? null;
+  
+    const heightLevels = [
+      { name: "surface", level: "10m" },
+      { name: "mixed", level: "100m" },
+      { name: "aloft", level: "100m" }
+    ];
+  
+    const trajectories = [];
+  
+    for (const layer of heightLevels) {
+      for (let p = 0; p < nParticles; p++) {
+        const spread = 0.01;
+        let offset = 0;
+        
+        if(layer.name === "surface") offset = 0.0;
+        if(layer.name === "mixed") offset = 0.01;
+        if(layer.name === "aloft") offset = -0.01;
+        
+        const lat0 = startLat + offset + (Math.random()-0.5)*spread;
+        const lon0 = startLon + offset + (Math.random()-0.5)*spread;
+  
+        const winds = [];
+  
+
+        for (let h = 0; h < hoursBack; h++) {
+          const w = {
+            ws10: wind.ws,
+            wd10: wind.wd,
+            ws100: wind.ws * 1.2,
+            wd100: wind.wd
+          };
+          if (!w) continue;        
+          const subSteps = Math.round(60 / dtMinutes);        
+          for (let s = 0; s < subSteps; s++) {
+  
+          let ws, wd;
+  
+
+          if (layer.level === "10m") {
+            ws = w.ws10 * (0.7 + 0.6 * Math.random());
+            wd = w.wd10 + (Math.random() - 0.5) * 25;
+          }
+          
+          if (layer.level === "100m") {
+            ws = w.ws100 * (0.8 + 0.5 * Math.random());
+            wd = w.wd100 + (Math.random() - 0.5) * 20;
+          }
+          
+          // Terrain steering
+          const terrainTurn = await terrainSteering(
+            lat0 + (Math.random()-0.5)*0.02,
+            lon0 + (Math.random()-0.5)*0.02,
+            wd
+          );          
+          
+          const terrainFactor =
+            Math.max(0, 1 - ws / 8) *
+            (layer.level === "10m" ? 1 : 0.35);          
+          
+          wd = wd + terrainTurn * terrainFactor * 0.5;
+          wd = (wd + 360) % 360;
+  
+          winds.push({
+            ws,
+            wd,
+            hours: dtMinutes / 60
+          });            
+        }
+      }
+
+        
+        if (!winds.length) continue;
+  
+        const pts = window.computeBackTrajectory(lat0, lon0, winds);
+  
+        const traj = await Promise.all(
+          pts.map(async ([lat, lon], i) => {
+            let weight = 1.0;
+  
+            if (startElevation !== null) {
+              try {
+                let elev = startElevation;                
+                if (i % 5 === 0) {
+                  elev = await getElevation(lat, lon);
+                }                
+                weight = terrainWeight(startElevation, elev);
+              } catch (e) {
+                weight = 1.0;
+              }
+            }
+  
+            const sigma = 0.003 * Math.sqrt(i + 1) * weight;
+  
+            return {
+              lat: lat + (Math.random() - 0.5) * sigma,
+              lon: lon + (Math.random() - 0.5) * sigma,
+              height: layer.name
+            };
+          })
+        );
+  
+        trajectories.push(traj);
+      }
+    }
+  
+    return trajectories;
+  }
+
+
+  
+    // Build a coarse “footprint” grid from ensemble trajectories
+    function buildFootprint(trajectories, dlat = 0.025, dlon = 0.025) {    
+      const counts = new Map();    
+      trajectories.forEach(traj => {    
+        if (!traj || !traj.length) return;
+        
+        // ONLY surface trajectories produce touchdown footprint
+        if (traj[0].height !== "surface") return;    
+        traj.forEach((pt, i) => {
+    
+          // ignore first few points near receptor
+          if (i < 3) return;
+          
+          const timeWeight = 1 / (i + 1);
+          const windWeight = 5
+    
+          const weight = windWeight * timeWeight;
+    
+          const iy = Math.round(pt.lat / dlat);
+          const ix = Math.round(pt.lon / dlon);
+    
+          const key = `${iy},${ix}`;
+    
+          counts.set(key, (counts.get(key) || 0) + weight);
+    
+        });
+    
+      });
+    
+      const cells = [];
+    
+      for (const [key, count] of counts.entries()) {
+    
+        const [iy, ix] = key.split(",").map(Number);
+    
+        cells.push({
+          lat: iy * dlat,
+          lon: ix * dlon,
+          count
+        });
+    
+      }
+    
+      return cells;
+    
+    }
+
+
+    function drawSurfaceProbabilityGrid(cells, receptorLat, receptorLon, dlat = 0.02, dlon = 0.02) {
+    
+      if (!cells.length) return;
+    
+      const maxCount = Math.max(...cells.map(c => c.count));
+    
+      cells.forEach(cell => {    
+        const intensity = cell.count / maxCount;    
+        const bounds = [
+          [cell.lat - dlat/2, cell.lon - dlon/2],
+          [cell.lat + dlat/2, cell.lon + dlon/2]
+        ];
+    
+        const opacity = 0.15 + intensity * 0.6;            
+        const probPercent = (intensity * 100).toFixed(1);
+        
+        // create points FIRST
+        const cellPoint = turf.point([cell.lon, cell.lat]);
+        const receptorPoint = turf.point([receptorLon, receptorLat]);
+      
+        // then calculate distance
+        const distKm = turf.distance(receptorPoint, cellPoint, {units:"kilometers"});
+      
+        const ws = Number.isFinite(lastWind.ws) ? lastWind.ws.toFixed(1) : "N/A";
+        const wd = Number.isFinite(lastWind.wdDeg) ? lastWind.wdDeg.toFixed(0) : "N/A";        
+        
+        L.rectangle(bounds,{
+          weight:0,
+          fillColor:`rgba(255,80,0,${opacity})`,
+          fillOpacity:1
+        })
+        .bindTooltip(
+          `Surface Influence Probability<br>
+           Probability: <b>${probPercent}%</b><br>
+           Distance: ${distKm.toFixed(1)} km<br>
+           Wind from: ${wd}° at ${ws} m/s`,
+          {sticky:true}
+        )
+        .addTo(surfaceProbLayer);
+    
+      });
+    
+    }
+
+
+
+
+  
+  
+    // Draw “influence bubbles” from footprint cells  
+    function drawFootprint(cells) {
+    
+      if (!Array.isArray(cells) || !cells.length) return;
+    
+      const maxCount = Math.max(...cells.map(c => c.count));
+    
+      cells.forEach(cell => {
+    
+        const intensity = cell.count / maxCount;
+    
+        const radius = 2 + intensity * 4;
+    
+        L.circleMarker([cell.lat, cell.lon], {
+          radius: radius,
+          color: "#6b3d00",
+          weight: 1,
+          fillColor: "#ff7f00",
+          fillOpacity: 0.35 + intensity * 0.35
+        }).addTo(touchdownLayer);
+    
+      });
+    
+    }
+
+
+    // Bearing from (lat1, lon1) TO (lat2, lon2), in degrees 0–360
+    function bearingDeg(lat1, lon1, lat2, lon2) {
+      const phi1 = lat1 * Math.PI / 180.0;
+      const phi2 = lat2 * Math.PI / 180.0;
+      const dLon = (lon2 - lon1) * Math.PI / 180.0;
+  
+      const x = Math.sin(dLon) * Math.cos(phi2);
+      const y =
+        Math.cos(phi1) * Math.sin(phi2) -
+        Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLon);
+  
+      const brng = Math.atan2(x, y) * 180.0 / Math.PI;
+      return (brng + 360.0) % 360.0; // normalize to 0–360
+    }
+  
+    // Map a bearing to a 45° sector label
+    function bearingToSector(bearing) {
+      const labels = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+      const sectorSize = 360.0 / labels.length;  // 45°
+      const idx = Math.floor((bearing + sectorSize / 2.0) / sectorSize) % labels.length;
+      return labels[idx];
+    }
+
+
+
+  
+    // Summarize dominant upwind sector from ensemble trajectories
+    function computeDominantDirection(trajectories) {
+      const fromBearings = [];
+  
+      for (const traj of trajectories) {
+        if (!traj || traj.length < 2) continue;
+  
+        // Oldest point (back in time) to receptor (first point)
+        const oldest = traj[traj.length - 1];
+        const receptor = traj[0];
+  
+        // Bearing of the *air motion* (oldest → receptor)
+        const motionBearing = bearingDeg(
+          oldest.lat, oldest.lon,
+          receptor.lat, receptor.lon
+        );
+  
+        // Meteorological convention: wind FROM = motion + 180°
+        const windFrom = (motionBearing + 180.0) % 360.0;
+        fromBearings.push(windFrom);
+      }
+  
+      if (!fromBearings.length) {
+        return { sector: null, meanBearing: null, samples: 0 };
+      }
+  
+      // Circular-ish mean (simple average is fine for our rough sectors)
+      const meanFrom =
+        fromBearings.reduce((sum, b) => sum + b, 0) / fromBearings.length;
+  
+      // Count which 45° sector wins
+      const sectorCounts = {};
+      for (const b of fromBearings) {
+        const s = bearingToSector(b); // uses your existing helper
+        sectorCounts[s] = (sectorCounts[s] || 0) + 1;
+      }
+  
+      const dominantSector = Object.entries(sectorCounts)
+        .sort((a, b) => b[1] - a[1])[0][0];
+  
+      return {
+        sector: dominantSector,
+        meanBearing: meanFrom,
+        samples: fromBearings.length
+      };
+    }
+  
+    // Draw all ensemble members as polylines
+    function drawTrajectories(trajectories) {
+    
+      if (!Array.isArray(trajectories)) return;
+    
+      trajectories.forEach(traj => {
+    
+        if (!traj || !traj.length) return;
+    
+        const latlngs = traj.map(pt => [pt.lat, pt.lon]);
+    
+        const h = traj[0].height;
+    
+        let layer;
+        let color;
+    
+        if (h === "surface") {
+          layer = surfaceTrajLayer;
+          color = "#2c7fb8";
+        }
+    
+        if (h === "mixed") {
+          layer = mixedTrajLayer;
+          color = "#41ab5d";
+        }
+    
+        if (h === "aloft") {
+          layer = aloftTrajLayer;
+          color = "#de2d26";
+        }
+    
+        const line = L.polyline(latlngs,{
+          weight:2,
+          opacity:0.45,
+          color:color,
+          smoothFactor:1.5
+        }).addTo(layer);
+    
+      });
+    
+    }
+  
+
+  function distancePointToSegmentKm(pt, a, b) {
+    const p = turf.point([pt.lon, pt.lat]);
+    const line = turf.lineString([
+      [a.lon, a.lat],
+      [b.lon, b.lat]
+    ]);
+    const snapped = turf.nearestPointOnLine(line, p, {units: "kilometers"});
+    return snapped.properties.dist;
+  }
+
+  function distanceToTrajectoryKm(point, trajectory){
+    let best = Infinity;
+    for(let i=0;i<trajectory.length-1;i++){
+      const d = distancePointToSegmentKm(
+        point,
+        trajectory[i],
+        trajectory[i+1]
+      );
+      if(d < best) best = d;
+    }
+    return best;
+  }
+    
+    // Which point features are within radiusKm of ANY footprint cell?
+  function pointsInFootprint(srcFC, cells, radiusKm = 20) {
+    if (!srcFC || !Array.isArray(srcFC.features) || !Array.isArray(cells) || !cells.length) {
+      return [];
+    }
+
+    const hits = [];
+
+    for (const src of srcFC.features) {
+      const ll = getFeatureLatLon(src);
+      if (!ll) continue;
+
+      const pt = turf.point([ll.lon, ll.lat]);
+
+      let best = Infinity;
+      for (const cell of cells) {
+        const cellPt = turf.point([cell.lon, cell.lat]);
+        const d = turf.distance(pt, cellPt, { units: "kilometers" });
+        if (d < best) best = d;
+      }
+
+      if (best <= radiusKm) {
+        hits.push({ feature: src, dist_km: best });
+      }
+    }
+
+    // sort closest first
+    hits.sort((a, b) => a.dist_km - b.dist_km);
+    return hits;
+  }
+
+  
+// ─────────────────────────────────────────
+// Click handler – 3h centreline + ensemble bubbles
+// ─────────────────────────────────────────
+map.on("click", async (e) => {
+  const { lat, lng } = e.latlng;
+  const startElevation = await getElevation(lat, lng);
+  
+  // Make sure all feature collections are ready
+  await Promise.all([
+    window.stationsFCReady,
+    window.purpleFCReady,
+    window.npriFCReady
+  ]);
+
+  // Clear any previous trajectories / footprints
+  surfaceTrajLayer.clearLayers();
+  mixedTrajLayer.clearLayers();
+  aloftTrajLayer.clearLayers();
+  touchdownLayer.clearLayers();
+  surfaceProbLayer.clearLayers();  
+  centerlineLayer.clearLayers();
+  receptorLayer.clearLayers();
+  
+  
+  // Mark receptor
+  L.circleMarker(e.latlng, {
+    radius: 6,
+    color: "#000",
+    weight: 2,
+    fillColor: "#ff0000",
+    fillOpacity: 0.9
+  }).addTo(receptorLayer);
+
+  try {
+    // 1) Update wind at receptor
+    const latest = await getLatestWindFile();
+    const data = await fetchWindFile(latest.file_path);
+    
+    // extract wind at point
+    const w = extractWindAtPoint(data, lat, lng);
+    
+    if (!w) {
+      alert("No wind data found");
+      return;
+    }
+
+    
+    // build simple 3-hour series
+    const winds3h = [
+      { ws: w.ws, wd: w.wd, hours: 1 },
+      { ws: w.ws, wd: w.wd, hours: 1 },
+      { ws: w.ws, wd: w.wd, hours: 1 }
+    ];
+        
+
+    // computeBackTrajectory & trajectoryToGeoJSON come from origin-data.js
+    const trajPoints  = window.computeBackTrajectory(lat, lng, winds3h);
+    const trajFeature = window.trajectoryToGeoJSON(trajPoints, {
+      start_lat: lat,
+      start_lon: lng
+    });
+
+    // Draw centreline
+    L.geoJSON(trajFeature, {
+      style: { weight: 3, opacity: 0.9, dashArray:"6,6", color:"#000" }
+    }).addTo(centerlineLayer);
+
+    // 3) Ensemble trajectories + footprint ("bubbles")
+    const trajectories = await computeEnsembleTrajectories(lat, lng, w, {
+      nParticles: 40,
+      hoursBack: 3,
+      startElevation: startElevation
+    });
+
+    const footprint = buildFootprint(trajectories, 0.015, 0.015);
+    drawSurfaceProbabilityGrid(footprint, lat, lng, 0.015, 0.015);  
+    const dom       = computeDominantDirection(trajectories);
+
+    // Draw all ensemble members (fainter) + bubbles
+    drawTrajectories(trajectories);
+    drawFootprint(footprint);
+
+    // 4) Who sits under the plume?  Use the footprint, not just the line
+    const stationHits = pointsInFootprint(window.STATIONS_FC, footprint, 20); // km
+    const purpleHits  = pointsInFootprint(window.PURPLE_FC,   footprint, 20);
+    const npriHits = window.NPRI_FC.features
+      .map(f => {
+        const ll = getFeatureLatLon(f);
+        if(!ll) return null;
+        const d = distanceToTrajectoryKm(
+          {lat: ll.lat, lon: ll.lon},
+          trajectories[0]   // use centreline trajectory
+        );
+        return {feature: f, dist_km: d};
+      })
+      .filter(x => x && x.dist_km <= 6)  // plume width
+      .sort((a,b)=>a.dist_km-b.dist_km);
+
+    // 5) Build popup text
+    const makeList = (arr, formatter) =>
+      arr.length ? arr.slice(0, 3).map(formatter).join("<br>") : "None";
+
+    const stationLines = makeList(
+      stationHits.slice(0,3),
+      h => {
+        const p  = h.feature.properties || {};
+        const nm = p.stationName || p.StationName || "Station";
+        let aq   = p.aqhi ?? p.AQHI ?? "N/A";
+        if (!isNaN(+aq)) aq = (+aq > 10 ? "10+" : (+aq).toFixed(0));
+        return `${nm} — AQHI: ${aq} (≈${h.dist_km.toFixed(1)} km from footprint)`;
+      }
+    );
+
+    const purpleLines = makeList(
+      purpleHits,
+      h => {
+        const p   = h.feature.properties || {};
+        const nm  = p.name || p.Label || "PurpleAir";
+        const pm  = parseFloat(p.pm_corr ?? p.pm25 ?? p.PM2_5 ?? "N/A");
+        const pmStr = Number.isFinite(pm) ? pm.toFixed(1) : "N/A";
+        return `${nm} — PM2.5: ${pmStr} µg/m³ (≈${h.dist_km.toFixed(1)} km from footprint)`;
+      }
+    );
+
+
+    const uniqueNpri = [];
+    const seen = new Set();
+    
+    npriHits.forEach(h => {
+      const name = h.feature.properties?.FACILITY_NAME;
+      if (!seen.has(name)) {
+        seen.add(name);
+        uniqueNpri.push(h);
+      }
+    });
+    
+    const npriLines = uniqueNpri.length
+      ? uniqueNpri.slice(0,12).map(h => {
+          const p   = h.feature.properties || {};
+          const fac = p.FACILITY_NAME || "Facility";
+          return `${fac} (≈${h.dist_km.toFixed(1)} km from footprint)`;
+        }).join("<br>")
+      : "None";
+
+    
+    const popupHtml = `
+      <b>Back-trajectory (~3 hours)</b><br/>
+      Wind-from: ${w.wd.toFixed(0)}° at ${w.ws.toFixed(1)} m/s<br/>
+      Ensemble members: ${dom.samples}<br/>
+      Dominant upwind sector: <b>${dom.sector ?? "N/A"}</b><br/>
+      Mean wind-from: ${
+        dom.meanBearing !== null
+          ? dom.meanBearing.toFixed(0) + "&deg;"
+          : "N/A"
+      }<br/><br/>
+      <b>Closest AQHI stations near surface touchdown footprint (~20 km):</b><br/>
+      ${stationLines}<br/><br/>
+      <b>Closest PurpleAir sensors near surface touchdown footprint (~20 km):</b><br/>
+      ${purpleLines}<br/><br/>
+      <b>NPRI facilities near upwind trajectory (~6 km):</b>
+      ${npriLines}
+    `;
+
+    const popup = L.popup({
+      maxWidth: 320,
+      // move popup to the right and slightly up relative to the click
+      offset: L.point(220, -120),
+      autoPan: true,
+      autoPanPaddingTopLeft: [10, 50],
+      autoPanPaddingBottomRight: [10, 10]
+    })
+      .setLatLng(e.latlng)
+      .setContent(popupHtml);
+    
+    map.openPopup(popup);
+
+
+  } catch (err) {
+    console.error("Back-trajectory error:", err);
+    alert("Could not compute back trajectory. Check console for details.");
+  }
+});
+
+</script>
