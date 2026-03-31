@@ -33,7 +33,7 @@ jobs:
 
       - name: Run meteorology pull
         run: |
-          python ab_met_pull.py
+          python py/ab_met_pull.py
 
 
 
