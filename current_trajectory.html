@@ -80,10 +80,8 @@
 
     div.innerHTML = `
     <b>Trajectory Layers</b><br>
-    <span style="color:#2c7fb8">●</span> Surface trace (10 m)<br>
-    <span style="color:#41ab5d">●</span> Mixed trace (100 m)<br>
-    <span style="color:#de2d26">●</span> Aloft trace (100 m fast flow)<br>
-    <span style="color:#8c510a">●</span> Surface touchdown bubbles<br>
+    <span style="color:#2c7fb8">●</span> Back trajectory (HRDPS wind)<br>
+    <span style="color:#8c510a">●</span> Surface touchdown influence<br>
     <span style="color:#000">⋯</span> Centerline
     `;
   
@@ -122,8 +120,6 @@
   const centerlineLayer = L.layerGroup();
   
   const surfaceTrajLayer = L.layerGroup().addTo(map);
-  const mixedTrajLayer   = L.layerGroup();
-  const aloftTrajLayer   = L.layerGroup();
   
   const touchdownLayer   = L.layerGroup();
   const receptorLayer = L.layerGroup().addTo(map);
@@ -139,8 +135,6 @@
 
   const overlayMaps = {
     "Surface Trajectory (10 m)": surfaceTrajLayer,
-    "Mixed Layer Trajectory (100 m)": mixedTrajLayer,
-    "Aloft Trajectory (100 m fast flow)": aloftTrajLayer,
     "Surface Touchdowns": touchdownLayer,
     "Surface Probability Grid": surfaceProbLayer,
     "Centerline": centerlineLayer,
@@ -414,24 +408,48 @@
   // ─────────────────────────────────────────
   // Load FCs (from origin-data.js)
   // ─────────────────────────────────────────
-  Promise.all([
-    window.stationsFCReady,
-    window.purpleFCReady,
-    window.npriFCReady
-  ]).then(() => {
-    console.log(
-      "[origin init] FC sizes:",
-      window.STATIONS_FC.features.length, "stations,",
-      window.PURPLE_FC.features.length,   "purple,",
-      window.NPRI_FC.features.length,     "npri"
-    );
-
-    plotStations(window.STATIONS_FC);
-    plotPurple(window.PURPLE_FC);
-    plotNPRI(window.NPRI_FC);
-  }).catch(err => {
-    console.error("[origin init] error plotting layers", err);
-  });
+  async function loadStations() {
+    const res = await fetch("https://dkevinm.github.io/AB_datapull/data/last6h.csv");
+    const text = await res.text();
+  
+    const rows = text.trim().split("\n");
+    const headers = rows.shift().split(",");
+  
+    const features = rows.map(line => {
+      const cols = line.split(",");
+      const obj = Object.fromEntries(headers.map((h,i)=>[h,cols[i]]));
+  
+      const lat = parseFloat(obj.Latitude);
+      const lon = parseFloat(obj.Longitude);
+  
+      if (!isFinite(lat) || !isFinite(lon)) return null;
+  
+      return {
+        type: "Feature",
+        properties: obj,
+        geometry: {
+          type: "Point",
+          coordinates: [lon, lat]
+        }
+      };
+    }).filter(Boolean);
+  
+    return {
+      type: "FeatureCollection",
+      features
+    };
+  }
+  
+  async function loadPurple() {
+    const res = await fetch("https://dkevinm.github.io/AB_datapull/data/AB_PM25_map.json");
+    const json = await res.json();
+    return toPointFC(json);
+  }
+  
+  async function loadNPRI() {
+    const res = await fetch("https://dkevinm.github.io/AB_datapull/data/NPRI.geojson");
+    return await res.json();
+  }
 
 
   // ─────────────────────────────────────────
@@ -444,9 +462,7 @@
     const startElevation = options.startElevation ?? null;
   
     const heightLevels = [
-      { name: "surface", level: "10m" },
-      { name: "mixed", level: "100m" },
-      { name: "aloft", level: "100m" }
+      { name: "surface", level: "10m" }
     ];
   
     const trajectories = [];
@@ -470,8 +486,6 @@
           const w = {
             ws10: wind.ws,
             wd10: wind.wd,
-            ws100: wind.ws * 1.2,
-            wd100: wind.wd
           };
           if (!w) continue;        
           const subSteps = Math.round(60 / dtMinutes);        
@@ -480,15 +494,8 @@
           let ws, wd;
   
 
-          if (layer.level === "10m") {
-            ws = w.ws10 * (0.7 + 0.6 * Math.random());
-            wd = w.wd10 + (Math.random() - 0.5) * 25;
-          }
-          
-          if (layer.level === "100m") {
-            ws = w.ws100 * (0.8 + 0.5 * Math.random());
-            wd = w.wd100 + (Math.random() - 0.5) * 20;
-          }
+          ws = w.ws * (0.8 + 0.4 * Math.random());
+          wd = w.wd + (Math.random() - 0.5) * 20;
           
           // Terrain steering
           const terrainTurn = await terrainSteering(
@@ -768,17 +775,7 @@
           layer = surfaceTrajLayer;
           color = "#2c7fb8";
         }
-    
-        if (h === "mixed") {
-          layer = mixedTrajLayer;
-          color = "#41ab5d";
-        }
-    
-        if (h === "aloft") {
-          layer = aloftTrajLayer;
-          color = "#de2d26";
-        }
-    
+       
         const line = L.polyline(latlngs,{
           weight:2,
           opacity:0.45,
@@ -854,16 +851,32 @@ map.on("click", async (e) => {
   const startElevation = await getElevation(lat, lng);
   
   // Make sure all feature collections are ready
-  await Promise.all([
-    window.stationsFCReady,
-    window.purpleFCReady,
-    window.npriFCReady
-  ]);
-
+  await (async () => {
+    try {
+  
+      const [stations, purple, npri] = await Promise.all([
+        loadStations(),
+        loadPurple(),
+        loadNPRI()
+      ]);
+  
+      console.log(
+        "[origin init] FC sizes:",
+        stations.features.length, "stations,",
+        purple.features.length,   "purple,",
+        npri.features.length,     "npri"
+      );
+  
+      plotStations(stations);
+      plotPurple(purple);
+      plotNPRI(npri);
+  
+    } catch (err) {
+      console.error("[origin init] error plotting layers", err);
+    }
+  })();
   // Clear any previous trajectories / footprints
   surfaceTrajLayer.clearLayers();
-  mixedTrajLayer.clearLayers();
-  aloftTrajLayer.clearLayers();
   touchdownLayer.clearLayers();
   surfaceProbLayer.clearLayers();  
   centerlineLayer.clearLayers();
