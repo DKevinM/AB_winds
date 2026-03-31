@@ -944,35 +944,22 @@ map.on("click", async (e) => {
     let meta = null;
     let data = null;
     
-    // ─────────────────────────────────────────
-    // 2) Try files until one works
-    // ─────────────────────────────────────────
     for (const row of candidates) {
-      const url = `${SUPABASE_URL}/storage/v1/object/public/winds/${row.file_path}`;
     
       try {
-        const data = await fetchWindFile(row.file_path);
-      
-        if (data && data.grid) {
-          meta = row;
-          console.log("✔ using wind file:", row.file_path);
-          break;
-        }
-      
-      } catch (err) {
-        console.warn("⏭ failed file:", row.file_path);
-      }
-      
+        console.log("Trying wind file:", row.file_path);
     
-        data = await fetchWindFile(row.file_path);
+        const result = await fetchWindFile(row.file_path);
     
-        if (data && data.grid) {
+        if (result && result.grid) {
           meta = row;
+          data = result;
           console.log("Using wind file:", row.file_path, row.valid_time);
           break;
         }
+    
       } catch (err) {
-        console.warn("Skipping failed file:", row.file_path, err);
+        console.warn("Failed file:", row.file_path, err);
       }
     }
     
