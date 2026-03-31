@@ -70,22 +70,25 @@ async function fetchWindFile(storagePath) {
   }
 
   const buffer = await res.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
 
   try {
-    // TRY decompressing
-    const decompressed = pako.inflate(new Uint8Array(buffer), { to: 'string' });
-    return JSON.parse(decompressed);
+    // Try gzip decompress FIRST (correct for your files)
+    const decompressed = pako.inflate(bytes, { to: 'string' });
+    const data = JSON.parse(decompressed);
+
+    console.log("Loaded as gzip");
+    return data;
 
   } catch (err) {
-    console.warn("Not gzipped, trying plain JSON...");
+    console.warn("Gzip failed, trying plain JSON");
 
     try {
-      // FALLBACK: treat as plain JSON
-      const text = new TextDecoder().decode(buffer);
+      const text = new TextDecoder().decode(bytes);
       return JSON.parse(text);
 
     } catch (err2) {
-      console.error("Both gzip and JSON parse failed:", err2);
+      console.error("Both gzip and JSON failed");
       return null;
     }
   }
