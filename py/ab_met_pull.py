@@ -94,10 +94,17 @@ def pick_available_cycle(now=None):
 
     for h in range(0, 49, 3):
         test_time = now - dt.timedelta(hours=h)
+
         cycle_hour = (test_time.hour // 6) * 6
-        cycle = test_time.replace(hour=cycle_hour, minute=0, second=0, microsecond=0)
+        cycle = test_time.replace(
+            hour=cycle_hour,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
 
         cycle_dir = f"{BASE}/{cycle:%H}/000/"
+
         try:
             html = requests.get(cycle_dir, timeout=15).text
         except Exception:
@@ -118,7 +125,11 @@ def build_url(run, var, level, lead):
 
 def download(url):
     r = requests.get(url)
+    if r.status_code == 404:
+        print(f" Missing file (skipping): {url}")
+        return None
     r.raise_for_status()
+    
     f = tempfile.NamedTemporaryFile(delete=False)
     f.write(r.content)
     f.close()
@@ -137,30 +148,38 @@ def main():
     os.makedirs(OUTDIR, exist_ok=True)
 
     for lead in LEADS:
+    
         fields_out = {}
-
+        any_success = False   
+    
         for var, levels in FIELDS.items():
             for lvl in levels:
+    
                 url = build_url(run, var, lvl, lead)
                 print("Downloading", url)
-
+    
                 tmp = download(url)
+    
+                if tmp is None:
+                    continue
+    
+                any_success = True  
+    
                 ds = xr.open_dataset(tmp, engine="cfgrib")
                 sub = crop(ds)
-
-                
+    
                 lats = sub.latitude.values
                 lons = sub.longitude.values
                 lons = np.where(lons > 180, lons - 360, lons)
-                
+    
                 ny, nx = lats.shape if lats.ndim == 2 else (len(lats), len(lons))
-                
+    
                 lat_max = float(np.nanmax(lats))
                 lon_min = float(np.nanmin(lons))
-                
+    
                 dx = float((np.nanmax(lons) - np.nanmin(lons)) / (nx - 1))
                 dy = float((lat_max - float(np.nanmin(lats))) / (ny - 1))
-                
+    
                 grid = {
                     "lo1": lon_min,
                     "la1": lat_max,
@@ -168,13 +187,23 @@ def main():
                     "dy": dy,
                     "nx": nx,
                     "ny": ny
-                }                
-
+                }
+    
                 key = f"{var.lower()}{lvl.replace('AGL-','').replace('m','')}"
                 fields_out[key] = sub.to_array().values.astype("float32").tolist()
-
+    
                 os.remove(tmp)
-
+    
+        # ===============================
+        #  ADD THIS BLOCK RIGHT HERE
+        # ===============================
+        if not any_success:
+            print(f"Stopping at lead {lead} — no data available")
+            break
+    
+        # ===============================
+        # EXISTING CODE CONTINUES
+        # ===============================
         payload = {
             "meta": {
                 "run": run.isoformat()+"Z",
