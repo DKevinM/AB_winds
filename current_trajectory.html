@@ -910,10 +910,24 @@ map.on("click", async (e) => {
 
   try {
     // 1) Update wind at receptor
-    const latest = await getLatestWindFile();
-    const data = await fetchWindFile(latest.file_path);
+    const timeISO = new Date().toISOString();
     
-    // extract wind at point
+    const meta = await findClosestWindFile(timeISO);
+    
+    if (!meta) {
+      alert("No wind file found");
+      return;
+    }
+    
+    console.log("Using wind file:", meta.file_path, meta.valid_time);
+    
+    const data = await fetchWindFile(meta.file_path);
+    
+    if (!data || !data.grid) {
+      alert("Wind data invalid");
+      return;
+    }
+    
     const w = extractWindAtPoint(data, lat, lng);
     
     if (!w) {
