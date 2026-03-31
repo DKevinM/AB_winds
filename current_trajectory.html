@@ -909,39 +909,104 @@ map.on("click", async (e) => {
   }).addTo(receptorLayer);
 
   try {
-    // 1) Update wind at receptor
+    // ─────────────────────────────────────────
+    // 1) Get best available wind file
+    // ─────────────────────────────────────────
     const timeISO = new Date().toISOString();
-    
-    const meta = await findClosestWindFile(timeISO);
-    
-    if (!meta) {
-      alert("No wind file found");
+  
+    console.log("Selecting wind for:", timeISO);
+  
+    // Pull a few candidates (latest → older)
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/wind_files?valid_time=lte.${timeISO}&order=valid_time.desc&limit=5`,
+      {
+        headers: {
+          apikey: API_KEY,
+          Authorization: `Bearer ${API_KEY}`
+        }
+      }
+    );
+  
+    if (!res.ok) {
+      console.error("❌ Supabase query failed:", res.status);
+      alert("Wind lookup failed");
       return;
     }
-    
-    console.log("Using wind file:", meta.file_path, meta.valid_time);
-    
-    const data = await fetchWindFile(meta.file_path);
-    
-    if (!data || !data.grid) {
-      alert("Wind data invalid");
+  
+    const candidates = await res.json();
+  
+    if (!candidates.length) {
+      console.warn("❌ No wind files returned");
+      alert("No wind data available");
       return;
     }
-    
+  
+    let meta = null;
+    let data = null;
+  
+    // ─────────────────────────────────────────
+    // 2) Try files until one works
+    // ─────────────────────────────────────────
+    for (const row of candidates) {
+  
+      const url = `${SUPABASE_URL}/storage/v1/object/public/winds/${row.file_path}`;
+  
+      try {
+        console.log("Trying wind file:", row.file_path);
+  
+        const test = await fetch(url, { method: "HEAD" });
+  
+        if (!test.ok) {
+          console.warn("⏭ missing file:", row.file_path);
+          continue;
+        }
+  
+        // file exists → fetch + unzip
+        data = await fetchWindFile(row.file_path);
+  
+        if (data && data.grid) {
+          meta = row;
+          console.log("✔ using wind file:", row.file_path, row.valid_time);
+          break;
+        }
+  
+      } catch (err) {
+        console.warn("⏭ failed file:", row.file_path, err);
+      }
+    }
+  
+    if (!meta || !data) {
+      console.error("❌ No valid wind file found");
+      alert("No usable wind data available");
+      return;
+    }
+  
+    // ─────────────────────────────────────────
+    // 3) Extract wind at clicked point
+    // ─────────────────────────────────────────
     const w = extractWindAtPoint(data, lat, lng);
-    
+  
     if (!w) {
-      alert("No wind data found");
+      console.warn("❌ No wind at location:", lat, lng);
+      alert("No wind data at this location");
       return;
     }
-
-    
-    // build simple 3-hour series
-    const winds3h = [
-      { ws: w.ws, wd: w.wd, hours: 1 },
-      { ws: w.ws, wd: w.wd, hours: 1 },
-      { ws: w.ws, wd: w.wd, hours: 1 }
-    ];
+  
+    console.log("Wind:", w);
+  
+    // ─────────────────────────────────────────
+    // 4) Build simple 3-hour series
+    // ─────────────────────────────────────────
+    const winds3h = Array.from({ length: 3 }, () => ({
+      ws: w.ws,
+      wd: w.wd,
+      hours: 1
+    }));
+  
+  } catch (err) {
+    console.error("❌ Wind processing error:", err);
+    alert("Wind processing failed");
+  }
         
 
     // computeBackTrajectory & trajectoryToGeoJSON come from origin-data.js
