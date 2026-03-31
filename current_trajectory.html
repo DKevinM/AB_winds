@@ -951,14 +951,18 @@ map.on("click", async (e) => {
       const url = `${SUPABASE_URL}/storage/v1/object/public/winds/${row.file_path}`;
     
       try {
-        console.log("Trying wind file:", row.file_path);
-    
-        const test = await fetch(url, { method: "HEAD" });
-    
-        if (!test.ok) {
-          console.warn("Skipping missing file:", row.file_path);
-          continue;
+        const data = await fetchWindFile(row.file_path);
+      
+        if (data && data.grid) {
+          meta = row;
+          console.log("✔ using wind file:", row.file_path);
+          break;
         }
+      
+      } catch (err) {
+        console.warn("⏭ failed file:", row.file_path);
+      }
+      
     
         data = await fetchWindFile(row.file_path);
     
