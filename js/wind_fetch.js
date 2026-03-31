@@ -58,20 +58,23 @@ async function findClosestWindFile(timeISO) {
 // fetch + unzip
 async function fetchWindFile(storagePath) {
   const url = `${SUPABASE_URL}/storage/v1/object/public/winds/${storagePath}`;
-  console.log(" Fetching wind file:", url);
+
+  console.log("Fetching:", url);
+
   const res = await fetch(url);
+
   if (!res.ok) {
-    console.error(" Wind file fetch failed:", res.status, url);
+    console.error("Fetch failed:", res.status, url);
     return null;
   }
+
   const buffer = await res.arrayBuffer();
+
   try {
     const decompressed = pako.inflate(new Uint8Array(buffer), { to: 'string' });
-    const data = JSON.parse(decompressed);
-    console.log(" Wind file loaded:", storagePath);
-    return data;
+    return JSON.parse(decompressed);
   } catch (err) {
-    console.error(" Decompression failed:", err);
+    console.error("Decompression failed:", err);
     return null;
   }
 }
