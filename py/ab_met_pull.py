@@ -24,6 +24,31 @@ def wind_file_exists(file_path):
     return len(resp.data) > 0
 
 
+def main(backfill_hours=0):
+    now = dt.datetime.utcnow()
+    runs_to_process = []
+
+    # current run
+    try:
+        runs_to_process.append(pick_available_cycle(now))
+    except:
+        print("No current cycle found")
+
+    # backfill runs
+    for h in range(6, backfill_hours + 1, 6):
+        past_time = now - dt.timedelta(hours=h)
+        try:
+            runs_to_process.append(pick_available_cycle(past_time))
+        except:
+            continue
+
+    # remove duplicates
+    runs_to_process = list({r: None for r in runs_to_process}.keys())
+    print("Runs to process:", runs_to_process)
+    for run in runs_to_process:
+        process_run(run)
+
+
 def upload_to_supabase(local_path, storage_path):
 
     with open(local_path, "rb") as f:
@@ -141,45 +166,47 @@ def crop(ds):
            (lon >= AB_LON_MIN % 360) & (lon <= AB_LON_MAX % 360)
     return ds.where(mask, drop=True)
 
-def main():
-    run = pick_available_cycle()
-    print("Using HRDPS cycle:", run.isoformat())
-    
+
+
+def process_run(run):
+
+    print("Processing run:", run.isoformat())
+
     os.makedirs(OUTDIR, exist_ok=True)
 
     for lead in LEADS:
-    
+
         fields_out = {}
-        any_success = False   
-    
+        any_success = False
+
         for var, levels in FIELDS.items():
             for lvl in levels:
-    
+
                 url = build_url(run, var, lvl, lead)
                 print("Downloading", url)
-    
+
                 tmp = download(url)
-    
+
                 if tmp is None:
                     continue
-    
-                any_success = True  
-    
+
+                any_success = True
+
                 ds = xr.open_dataset(tmp, engine="cfgrib")
                 sub = crop(ds)
-    
+
                 lats = sub.latitude.values
                 lons = sub.longitude.values
                 lons = np.where(lons > 180, lons - 360, lons)
-    
+
                 ny, nx = lats.shape if lats.ndim == 2 else (len(lats), len(lons))
-    
+
                 lat_max = float(np.nanmax(lats))
                 lon_min = float(np.nanmin(lons))
-    
+
                 dx = float((np.nanmax(lons) - np.nanmin(lons)) / (nx - 1))
                 dy = float((lat_max - float(np.nanmin(lats))) / (ny - 1))
-    
+
                 grid = {
                     "lo1": lon_min,
                     "la1": lat_max,
@@ -188,22 +215,16 @@ def main():
                     "nx": nx,
                     "ny": ny
                 }
-    
+
                 key = f"{var.lower()}{lvl.replace('AGL-','').replace('m','')}"
                 fields_out[key] = sub.to_array().values.astype("float32").tolist()
-    
+
                 os.remove(tmp)
-    
-        # ===============================
-        #  ADD THIS BLOCK RIGHT HERE
-        # ===============================
+
         if not any_success:
             print(f"Stopping at lead {lead} — no data available")
             break
-    
-        # ===============================
-        # EXISTING CODE CONTINUES
-        # ===============================
+
         payload = {
             "meta": {
                 "run": run.isoformat()+"Z",
@@ -215,10 +236,35 @@ def main():
         }
 
         fname = f"{OUTDIR}/ab_met_{run:%Y%m%d_%HZ}_f{lead:03d}.json.gz"
+
         with gzip.open(fname, "wt", encoding="utf-8") as f:
             json.dump(payload, f)
 
         print("Saved:", fname)
+
+        filename = os.path.basename(fname)
+
+        valid_time = run + dt.timedelta(hours=lead)
+        storage_path = f"hrdps/{valid_time.year}/{valid_time.month:02d}/{valid_time.day:02d}/{filename}"
+
+        if not wind_file_exists(storage_path):
+
+            print("Uploading to Supabase:", filename)
+
+            try:
+                upload_to_supabase(fname, storage_path)
+                insert_metadata_from_run(run, lead, storage_path)
+
+            except Exception as e:
+                if "already exists" in str(e):
+                    print("Skipped existing file")
+                else:
+                    raise
+
+        else:
+            print("Already exists in Supabase:", filename)
+
+        
 
 
         # -------------------------------
@@ -256,6 +302,12 @@ def main():
 
 
 
-
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--backfill", type=int, default=0)
+
+    args = parser.parse_args()
+
+    main(backfill_hours=args.backfill)
