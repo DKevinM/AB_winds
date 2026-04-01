@@ -775,6 +775,11 @@
     }
 
 
+    function isWithinUpwindSector(receptor, point, windFromDeg, toleranceDeg = 45) {
+      const b = bearingDeg(point.lat, point.lon, receptor.lat, receptor.lon);
+      const diff = Math.abs(((b - windFromDeg + 540) % 360) - 180);
+      return diff <= toleranceDeg;
+    }  
 
   
     // Summarize dominant upwind sector from ensemble trajectories
@@ -867,18 +872,7 @@
     return snapped.properties.dist;
   }
 
-  function distanceToTrajectoryKm(point, trajectory){
-    let best = Infinity;
-    for(let i=0;i<trajectory.length-1;i++){
-      const d = distancePointToSegmentKm(
-        point,
-        trajectory[i],
-        trajectory[i+1]
-      );
-      if(d < best) best = d;
-    }
-    return best;
-  }
+
     
     // Which point features are within radiusKm of ANY footprint cell?
   function pointsInFootprint(srcFC, cells, radiusKm = 20) {
@@ -895,14 +889,24 @@
       const pt = turf.point([ll.lon, ll.lat]);
 
       let best = Infinity;
+      let bestCell = null;
+      
       for (const cell of cells) {
         const cellPt = turf.point([cell.lon, cell.lat]);
         const d = turf.distance(pt, cellPt, { units: "kilometers" });
-        if (d < best) best = d;
+      
+        if (d < best) {
+          best = d;
+          bestCell = cell;
+        }
       }
 
       if (best <= radiusKm) {
-        hits.push({ feature: src, dist_km: best });
+        hits.push({
+          feature: src,
+          dist_km: best,
+          count: bestCell ? bestCell.count : 0
+        });
       }
     }
 
@@ -979,7 +983,7 @@ async function getWindSeries(lat, lng, timeISO, steps = 3) {
 })();  
   
 // ─────────────────────────────────────────
-// Click handler – 3h centreline + ensemble bubbles
+// Click handler – ensemble back-trajectory + footprint
 // ─────────────────────────────────────────
 map.on("click", async (e) => {
   const { lat, lng } = e.latlng;
@@ -1080,7 +1084,6 @@ map.on("click", async (e) => {
     // 4) Build simple 3-hour series
     // ─────────────────────────────────────────
     const winds3h = await getWindSeries(lat, lng, meta.valid_time, 4);
-    const wDisplay = winds3h[0] || null;
     if (!winds3h.length) {
       console.warn("No wind series — fallback to single wind");
       winds3h.push({ ws: w.ws, wd: w.wd, hours: 1 });
@@ -1089,7 +1092,6 @@ map.on("click", async (e) => {
 
     // computeBackTrajectory & trajectoryToGeoJSON come from origin-data.js
     const trajPoints  = window.computeBackTrajectory(lat, lng, winds3h);
-    const trajFeature = window.trajectoryToGeoJSON(trajPoints, {
       start_lat: lat,
       start_lon: lng
     });
@@ -1114,18 +1116,24 @@ map.on("click", async (e) => {
     // 4) Who sits under the plume?  Use the footprint, not just the line
     const stationHits = pointsInFootprint(window.STATIONS_FC, footprint, 20); // km
     const purpleHits  = pointsInFootprint(window.PURPLE_FC,   footprint, 20);
-    const npriHits = pointsInFootprint(window.NPRI_FC, footprint, 10);
-      .map(f => {
-        const ll = getFeatureLatLon(f);
-        if(!ll) return null;
-        const d = distanceToTrajectoryKm(
-          {lat: ll.lat, lon: ll.lon},
-          trajectories[0]   // use centreline trajectory
-        );
-        return {feature: f, dist_km: d};
-      })
-      .filter(x => x && x.dist_km <= 6)  // plume width
-      .sort((a,b)=>a.dist_km-b.dist_km);
+    const rawNpriHits = pointsInFootprint(window.NPRI_FC, footprint, 10);
+    
+    const windFrom = dom.meanBearing ?? null;
+    
+    const npriHits = windFrom === null
+      ? rawNpriHits
+      : rawNpriHits.filter(h => {
+          const ll = getFeatureLatLon(h.feature);
+          if (!ll) return false;
+    
+          return isWithinUpwindSector(
+            { lat, lon: lng },
+            ll,
+            windFrom,
+            60   // tolerance (adjust below)
+          );
+        });
+
 
     // 5) Build popup text
     const makeList = (arr, formatter) =>
@@ -1149,7 +1157,7 @@ map.on("click", async (e) => {
         const nm = p.stationName || p.StationName || "Station";
         let aq   = p.aqhi ?? p.AQHI ?? "N/A";
         if (!isNaN(+aq)) aq = (+aq > 10 ? "10+" : (+aq).toFixed(0));
-        return `${nm} (≈${h.dist_km.toFixed(1)} km from footprint)`;
+        return `${nm} (≈${h.dist_km.toFixed(1)} km away)`;
       }
     );
 
@@ -1160,7 +1168,7 @@ map.on("click", async (e) => {
         const nm  = p.name || p.Label || "PurpleAir";
         const pm  = parseFloat(p.pm_corr ?? p.pm25 ?? p.PM2_5 ?? "N/A");
         const pmStr = Number.isFinite(pm) ? pm.toFixed(1) : "N/A";
-        return `${nm} — PM2.5: ${pmStr} µg/m³ (≈${h.dist_km.toFixed(1)} km from footprint)`;
+        return `${nm} — PM2.5: ${pmStr} µg/m³ (≈${h.dist_km.toFixed(1)} km away)`;
       }
     );
 
@@ -1180,13 +1188,13 @@ map.on("click", async (e) => {
       ? uniqueNpri.slice(0,12).map(h => {
           const p   = h.feature.properties || {};
           const fac = p.FACILITY_NAME || "Facility";
-          return `${fac} (≈${h.dist_km.toFixed(1)} km from footprint)`;
+          return `${fac} (≈${h.dist_km.toFixed(1)} km away)`;
         }).join("<br>")
       : "None";
 
     
     const popupHtml = `
-      <b>Back-trajectory (~3 hours)</b><br/>
+      <b>Back-trajectory (~4 hours)</b><br/>
       Wind-from: ${
         winds3h[0]
           ? winds3h[0].wd.toFixed(0) + "° at " + winds3h[0].ws.toFixed(1) + " m/s"
@@ -1199,11 +1207,11 @@ map.on("click", async (e) => {
           ? dom.meanBearing.toFixed(0) + "&deg;"
           : "N/A"
       }<br/><br/>
-      <b>Closest AQHI stations near surface touchdown footprint (~20 km):</b><br/>
+      <b>Nearby AQHI stations (within ~20 km):</b><br/>
       ${stationLines}<br/><br/>
-      <b>Closest PurpleAir sensors near surface touchdown footprint (~20 km):</b><br/>
+      <b>Nearby PurpleAir sensors (within ~20 km):</b><br/>
       ${purpleLines}<br/><br/>
-      <b>NPRI facilities near upwind trajectory (~6 km):</b>
+      <b>NPRI facilities within upwind area:</b>
       ${npriLines}
     `;
 
