@@ -695,8 +695,6 @@
         // then calculate distance
         const distKm = turf.distance(receptorPoint, cellPoint, {units:"kilometers"});
       
-        const ws = "N/A";
-        const wd = "N/A";    
         
         L.rectangle(bounds,{
           weight:0,
@@ -1081,7 +1079,7 @@ map.on("click", async (e) => {
     console.log("Wind:", w);
     
     // ─────────────────────────────────────────
-    // 4) Build simple 3-hour series
+    // 4) Build simple 4-hour series
     // ─────────────────────────────────────────
     const winds3h = await getWindSeries(lat, lng, meta.valid_time, 4);
     if (!winds3h.length) {
@@ -1089,12 +1087,6 @@ map.on("click", async (e) => {
       winds3h.push({ ws: w.ws, wd: w.wd, hours: 1 });
     }    
         
-
-    // computeBackTrajectory & trajectoryToGeoJSON come from origin-data.js
-    const trajPoints  = window.computeBackTrajectory(lat, lng, winds3h);
-      start_lat: lat,
-      start_lon: lng
-    });
 
 
     // 3) Ensemble trajectories + footprint ("bubbles")
@@ -1118,7 +1110,11 @@ map.on("click", async (e) => {
     const purpleHits  = pointsInFootprint(window.PURPLE_FC,   footprint, 20);
     const rawNpriHits = pointsInFootprint(window.NPRI_FC, footprint, 10);
     
-    const windFrom = dom.meanBearing ?? null;
+    const windFrom = (dom.meanBearing !== null && dom.meanBearing !== undefined)
+      ? dom.meanBearing
+      : null;
+    
+    const receptorPt = { lat: lat, lon: lng };
     
     const npriHits = windFrom === null
       ? rawNpriHits
@@ -1127,10 +1123,10 @@ map.on("click", async (e) => {
           if (!ll) return false;
     
           return isWithinUpwindSector(
-            { lat, lon: lng },
+            receptorPt,
             ll,
             windFrom,
-            60   // tolerance (adjust below)
+            60
           );
         });
 
@@ -1211,7 +1207,7 @@ map.on("click", async (e) => {
       ${stationLines}<br/><br/>
       <b>Nearby PurpleAir sensors (within ~20 km):</b><br/>
       ${purpleLines}<br/><br/>
-      <b>NPRI facilities within upwind area:</b>
+      <b>NPRI facilities within upwind area:</b><br/>
       ${npriLines}
     `;
 
