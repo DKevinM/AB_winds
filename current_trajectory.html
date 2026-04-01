@@ -904,7 +904,30 @@ async function getWindSeries(lat, lng, timeISO, steps = 3) {
 
   return winds;
 }
-  
+
+(async function initLayers() {
+  try {
+
+    const [stations, purple, npri] = await Promise.all([
+      loadStations(),
+      loadPurple(),
+      loadNPRI()
+    ]);
+
+    window.STATIONS_FC = stations;
+    window.PURPLE_FC = purple;
+    window.NPRI_FC = npri;
+
+    plotStations(stations);
+    plotPurple(purple);
+    plotNPRI(npri);
+
+    console.log("Layers loaded on startup");
+
+  } catch (err) {
+    console.error("Layer init failed", err);
+  }
+})();  
   
 // ─────────────────────────────────────────
 // Click handler – 3h centreline + ensemble bubbles
@@ -917,31 +940,6 @@ map.on("click", async (e) => {
   await (async () => {
     try {
   
-      const [stations, purple, npri] = await Promise.all([
-        loadStations(),
-        loadPurple(),
-        loadNPRI()
-      ]);
-      
-      window.STATIONS_FC = stations;
-      window.PURPLE_FC = purple;
-      window.NPRI_FC = npri;      
-  
-      console.log(
-        "[origin init] FC sizes:",
-        stations.features.length, "stations,",
-        purple.features.length,   "purple,",
-        npri.features.length,     "npri"
-      );
-  
-      plotStations(stations);
-      plotPurple(purple);
-      plotNPRI(npri);
-  
-    } catch (err) {
-      console.error("[origin init] error plotting layers", err);
-    }
-  })();
   // Clear any previous trajectories / footprints
   surfaceTrajLayer.clearLayers();
   touchdownLayer.clearLayers();
@@ -1036,7 +1034,7 @@ map.on("click", async (e) => {
     // ─────────────────────────────────────────
     // 4) Build simple 3-hour series
     // ─────────────────────────────────────────
-    const winds3h = await getWindSeries(lat, lng, meta.valid_time, 3);
+    const winds3h = await getWindSeries(lat, lng, meta.valid_time, 8);
     const wDisplay = winds3h[0] || null;
     if (!winds3h.length) {
       console.warn("No wind series — fallback to single wind");
@@ -1091,16 +1089,19 @@ map.on("click", async (e) => {
     const makeList = (arr, formatter) =>
       arr.length ? arr.slice(0, 3).map(formatter).join("<br>") : "None";
 
-    const stationLines = makeList(
-      stationHits.slice(0,3),
-      h => {
-        const p  = h.feature.properties || {};
-        const nm = p.stationName || p.StationName || "Station";
-        let aq   = p.aqhi ?? p.AQHI ?? "N/A";
-        if (!isNaN(+aq)) aq = (+aq > 10 ? "10+" : (+aq).toFixed(0));
-        return `${nm} — AQHI: ${aq} (≈${h.dist_km.toFixed(1)} km from footprint)`;
+    const uniqueStations = [];
+    const seenStations = new Set();
+    
+    stationHits.forEach(h => {
+      const name = h.feature.properties?.stationName || h.feature.properties?.StationName;
+      if (!seenStations.has(name)) {
+        seenStations.add(name);
+        uniqueStations.push(h);
       }
-    );
+    });
+    
+    const stationLines = makeList(
+      uniqueStations.slice(0,3),
 
     const purpleLines = makeList(
       purpleHits,
