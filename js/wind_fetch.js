@@ -57,40 +57,32 @@ async function findClosestWindFile(timeISO) {
 
 // fetch 
 async function fetchWindFile(storagePath) {
-
   const url = `${SUPABASE_URL}/storage/v1/object/public/winds/${storagePath}`;
-
   console.log("Fetching:", url);
-
   const res = await fetch(url);
-
   if (!res.ok) {
     console.error("Fetch failed:", res.status, url);
     return null;
   }
-
   const buffer = await res.arrayBuffer();
   const bytes = new Uint8Array(buffer);
-
   try {
-    // Try gzip decompress FIRST (correct for your files)
-    const decompressed = pako.inflate(bytes, { to: 'string' });
-    const data = JSON.parse(decompressed);
-
-    console.log("Loaded as gzip");
-    return data;
-
-  } catch (err) {
-    console.warn("Gzip failed, trying plain JSON");
-
-    try {
-      const text = new TextDecoder().decode(bytes);
-      return JSON.parse(text);
-
-    } catch (err2) {
-      console.error("Both gzip and JSON failed");
+    const decompressed = pako.ungzip(bytes, { to: 'string' });
+    const start = decompressed.indexOf("{");
+    if (start === -1) {
+      console.error("No JSON found in decompressed data");
       return null;
     }
+    const cleaned = decompressed.substring(start);
+
+    console.log("First 100 chars:", cleaned.slice(0, 100));    
+    
+    const data = JSON.parse(cleaned);
+    console.log("Loaded as gzip (fixed)");
+    return data;
+  } catch (err) {
+    console.error("Gzip decode failed:", err);
+    return null;
   }
 }
 
