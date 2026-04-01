@@ -536,7 +536,7 @@
   
     for (const layer of heightLevels) {
       for (let p = 0; p < nParticles; p++) {
-        const spread = 0.005;
+        const spread = 0.0025;
         let offset = 0;
         
         if(layer.name === "surface") offset = 0.0;
@@ -562,7 +562,7 @@
           for (let s = 0; s < subSteps; s++) {
         
             let ws = w.ws;
-            let wd = w.wd + (Math.random() - 0.5) * 10;
+            let wd = w.wd + (Math.random() - 0.5) * 5;
         
             const terrainTurn = await terrainSteering(
               lat0,
