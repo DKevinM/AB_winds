@@ -134,11 +134,10 @@
   // }).addTo(map);
 
 
-  const centerlineLayer = L.layerGroup();
-  
+  const centerlineLayer = L.layerGroup().addTo(map);
+  const touchdownLayer  = L.layerGroup().addTo(map);
   const surfaceTrajLayer = L.layerGroup().addTo(map);
-  
-  const touchdownLayer   = L.layerGroup();
+
   const receptorLayer = L.layerGroup().addTo(map);
   const surfaceProbLayer = L.layerGroup().addTo(map);
   
@@ -936,10 +935,7 @@ map.on("click", async (e) => {
   const { lat, lng } = e.latlng;
   const startElevation = await getElevation(lat, lng);
   
-  // Make sure all feature collections are ready
-  await (async () => {
-    try {
-  
+ 
   // Clear any previous trajectories / footprints
   surfaceTrajLayer.clearLayers();
   touchdownLayer.clearLayers();
@@ -1102,6 +1098,14 @@ map.on("click", async (e) => {
     
     const stationLines = makeList(
       uniqueStations.slice(0,3),
+      h => {
+        const p  = h.feature.properties || {};
+        const nm = p.stationName || p.StationName || "Station";
+        let aq   = p.aqhi ?? p.AQHI ?? "N/A";
+        if (!isNaN(+aq)) aq = (+aq > 10 ? "10+" : (+aq).toFixed(0));
+        return `${nm} — AQHI: ${aq} (≈${h.dist_km.toFixed(1)} km from footprint)`;
+      }
+    );
 
     const purpleLines = makeList(
       purpleHits,
