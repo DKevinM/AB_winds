@@ -661,7 +661,11 @@
           `Surface Influence Probability<br>
            Probability: <b>${probPercent}%</b><br>
            Distance: ${distKm.toFixed(1)} km<br>
-           Wind from: ${wd}° at ${ws} m/s`,
+          Wind from: ${
+            winds3h[0]
+              ? winds3h[0].wd.toFixed(0) + "° at " + winds3h[0].ws.toFixed(1) + " m/s"
+              : "N/A"
+          },
           {sticky:true}
         )
         .addTo(surfaceProbLayer);
@@ -1033,6 +1037,7 @@ map.on("click", async (e) => {
     // 4) Build simple 3-hour series
     // ─────────────────────────────────────────
     const winds3h = await getWindSeries(lat, lng, meta.valid_time, 3);
+    const wDisplay = winds3h[0] || null;
     if (!winds3h.length) {
       console.warn("No wind series — fallback to single wind");
       winds3h.push({ ws: w.ws, wd: w.wd, hours: 1 });
@@ -1131,7 +1136,11 @@ map.on("click", async (e) => {
     
     const popupHtml = `
       <b>Back-trajectory (~3 hours)</b><br/>
-      Wind-from: ${w.wd.toFixed(0)}° at ${w.ws.toFixed(1)} m/s<br/>
+      Wind-from: ${
+        winds3h[0]
+          ? winds3h[0].wd.toFixed(0) + "° at " + winds3h[0].ws.toFixed(1) + " m/s"
+          : "N/A"
+      }<br/>
       Ensemble members: ${dom.samples}<br/>
       Dominant upwind sector: <b>${dom.sector ?? "N/A"}</b><br/>
       Mean wind-from: ${
