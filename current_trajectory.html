@@ -866,7 +866,7 @@ async function getWindSeries(lat, lng, timeISO, steps = 3) {
   const winds = [];
 
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/wind_files?valid_time=lte.${timeISO}&order=valid_time.desc&limit=${steps}`,
+    `${SUPABASE_URL}/rest/v1/wind_files?valid_time=lte.${timeISO.replace("+00:00","Z")}&order=valid_time.desc&limit=${steps}`,
     {
       headers: {
         apikey: API_KEY,
@@ -965,7 +965,7 @@ map.on("click", async (e) => {
     
     // Pull a few candidates (latest → older)
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/wind_files?valid_time=lte.${timeISO}&order=valid_time.desc&limit=5`,
+      `${SUPABASE_URL}/rest/v1/wind_files?valid_time=lte.${timeISO.replace("+00:00","Z")}&order=valid_time.desc&limit=5`,
       {
         headers: {
           apikey: API_KEY,
