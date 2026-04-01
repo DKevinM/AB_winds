@@ -919,7 +919,7 @@ async function getWindSeries(lat, lng, timeISO, steps = 3) {
   const winds = [];
 
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/wind_files?valid_time=lte.${timeISO.replace("+00:00","Z")}&order=valid_time.desc&limit=${steps}`,
+    `${SUPABASE_URL}/rest/v1/wind_files?valid_time=lte.${timeISO.replace("+00:00","Z")}&order=valid_time.desc&limit=${steps * 3}`,
     {
       headers: {
         apikey: API_KEY,
@@ -929,10 +929,13 @@ async function getWindSeries(lat, lng, timeISO, steps = 3) {
   );
 
   if (!res.ok) return winds;
-
+  
   const rows = await res.json();
-
+  const seenTimes = new Set();
   for (const row of rows) {
+    const valid = row.valid_time;
+    if (seenTimes.has(valid)) continue;
+    seenTimes.add(valid);
     try {
       const data = await fetchWindFile(row.file_path);
       if (!data) continue;
@@ -1013,7 +1016,7 @@ map.on("click", async (e) => {
     
     // Pull a few candidates (latest → older)
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/wind_files?valid_time=lte.${timeISO.replace("+00:00","Z")}&order=valid_time.desc&limit=5`,
+      `${SUPABASE_URL}/rest/v1/wind_files?valid_time=lte.${timeISO.replace("+00:00","Z")}&order=valid_time.desc&`,
       {
         headers: {
           apikey: API_KEY,
@@ -1080,7 +1083,7 @@ map.on("click", async (e) => {
     // ─────────────────────────────────────────
     // 4) Build simple 3-hour series
     // ─────────────────────────────────────────
-    const winds3h = await getWindSeries(lat, lng, meta.valid_time, 5);
+    const winds3h = await getWindSeries(lat, lng, meta.valid_time, 3);
     const wDisplay = winds3h[0] || null;
     if (!winds3h.length) {
       console.warn("No wind series — fallback to single wind");
