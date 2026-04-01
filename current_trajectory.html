@@ -503,8 +503,8 @@
 
         for (let h = 0; h < hoursBack; h++) {
           const w = {
-            ws10: wind.ws,
-            wd10: wind.wd,
+            ws: wind.ws,
+            wd: wind.wd,
           };
           if (!w) continue;        
           const subSteps = Math.round(60 / dtMinutes);        
@@ -861,6 +861,46 @@
     return hits;
   }
 
+
+async function getWindSeries(lat, lng, timeISO, steps = 3) {
+  const winds = [];
+
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/wind_files?valid_time=lte.${timeISO}&order=valid_time.desc&limit=${steps}`,
+    {
+      headers: {
+        apikey: API_KEY,
+        Authorization: `Bearer ${API_KEY}`
+      }
+    }
+  );
+
+  if (!res.ok) return winds;
+
+  const rows = await res.json();
+
+  for (const row of rows) {
+    try {
+      const data = await fetchWindFile(row.file_path);
+      if (!data) continue;
+
+      const w = extractWindAtPoint(data, lat, lng);
+      if (!w) continue;
+
+      winds.push({
+        ws: w.ws,
+        wd: w.wd,
+        hours: 1
+      });
+
+    } catch (e) {
+      console.warn("wind step failed", row.file_path);
+    }
+  }
+
+  return winds;
+}
+  
   
 // ─────────────────────────────────────────
 // Click handler – 3h centreline + ensemble bubbles
@@ -878,6 +918,10 @@ map.on("click", async (e) => {
         loadPurple(),
         loadNPRI()
       ]);
+      
+      window.STATIONS_FC = stations;
+      window.PURPLE_FC = purple;
+      window.NPRI_FC = npri;      
   
       console.log(
         "[origin init] FC sizes:",
@@ -988,11 +1032,11 @@ map.on("click", async (e) => {
     // ─────────────────────────────────────────
     // 4) Build simple 3-hour series
     // ─────────────────────────────────────────
-    const winds3h = Array.from({ length: 3 }, () => ({
-      ws: w.ws,
-      wd: w.wd,
-      hours: 1
-    }));
+    const winds3h = await getWindSeries(lat, lng, meta.valid_time, 3);
+    if (!winds3h.length) {
+      console.warn("No wind series — fallback to single wind");
+      winds3h.push({ ws: w.ws, wd: w.wd, hours: 1 });
+    }    
         
 
     // computeBackTrajectory & trajectoryToGeoJSON come from origin-data.js
