@@ -550,8 +550,9 @@
   
         const winds = [];
   
-
+        
         for (let h = 0; h < hoursBack; h++) {
+        
           const w = Array.isArray(options.windSeries) && options.windSeries[h]
             ? options.windSeries[h]
             : { ws: wind.ws, wd: wind.wd };
@@ -561,34 +562,29 @@
           const subSteps = Math.round(60 / dtMinutes);
         
           for (let s = 0; s < subSteps; s++) {
-  
-          let ws, wd;
-  
-
-          ws = w.ws * (0.8 + 0.4 * Math.random());
-          wd = w.wd + (Math.random() - 0.5) * 20;
-          
-          // Terrain steering
-          const terrainTurn = await terrainSteering(
-            lat0 + (Math.random()-0.5)*0.02,
-            lon0 + (Math.random()-0.5)*0.02,
-            wd
-          );          
-          
-          const terrainFactor =
-            Math.max(0, 1 - ws / 8) *
-            (layer.level === "10m" ? 1 : 0.35);          
-          
-          wd = wd + terrainTurn * terrainFactor * 0.5;
-          wd = (wd + 360) % 360;
-  
-          winds.push({
-            ws,
-            wd,
-            hours: dtMinutes / 60
-          });            
+        
+            let ws = w.ws * (0.8 + 0.4 * Math.random());
+            let wd = w.wd + (Math.random() - 0.5) * 20;
+        
+            const terrainTurn = await terrainSteering(
+              lat0,
+              lon0,
+              wd
+            );
+        
+            const terrainFactor =
+              Math.max(0, 1 - ws / 8) *
+              (layer.level === "10m" ? 1 : 0.35);
+        
+            wd = (wd + terrainTurn * terrainFactor * 0.5 + 360) % 360;
+        
+            winds.push({
+              ws,
+              wd,
+              hours: dtMinutes / 60
+            });
+          }
         }
-      }
 
         
         if (!winds.length) continue;
