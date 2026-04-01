@@ -1083,7 +1083,7 @@ map.on("click", async (e) => {
     // ─────────────────────────────────────────
     // 4) Build simple 3-hour series
     // ─────────────────────────────────────────
-    const winds3h = await getWindSeries(lat, lng, meta.valid_time, 3);
+    const winds3h = await getWindSeries(lat, lng, meta.valid_time, 4);
     const wDisplay = winds3h[0] || null;
     if (!winds3h.length) {
       console.warn("No wind series — fallback to single wind");
