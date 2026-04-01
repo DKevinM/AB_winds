@@ -39,6 +39,8 @@
   <div class="info" id="info">Loading wind…</div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <script src="js/wind_fetch.js"></script>  
 
 
 
@@ -49,12 +51,6 @@
       i: 0,
       a: 0
     };    
-    // ---------- CONFIG YOU MAY NEED TO EDIT ----------
-    // These MUST match whatever your ab_wind_json.py writes into the header.
-    // If your JSON header names differ, adjust readHeader() below.
-    const HOURS = [0,1,2,3];
-    const U_URLS = HOURS.map(h => `data/AB_u_00${h}.json`);
-    const V_URLS = HOURS.map(h => `data/AB_v_00${h}.json`);
 
 
     // If your grid is Alberta-only, set a reasonable start view:
@@ -465,60 +461,34 @@
       };
     }
 
-    async function loadWind() {
-      const info = document.getElementById("info");
-      info.textContent = "Loading wind JSON…";
-    
-      const uJsons = await Promise.all(U_URLS.map(u => fetch(u).then(r => r.json())));
-      const vJsons = await Promise.all(V_URLS.map(v => fetch(v).then(r => r.json())));
-    
-      let activeField = buildField(uJsons[0], vJsons[0]);
-      field = activeField;
-
-      
-      windTime.baseUTC = new Date(activeField.modelTime.endsWith("Z") 
-        ? activeField.modelTime 
-        : activeField.modelTime + "Z");
+    async function fetchLatestWindFromSupabase() {
+      const SUPABASE_URL = "https://zcunoncbyitfsilrhymv.supabase.co";
+      const API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpjdW5vbmNieWl0ZnNpbHJoeW12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE3Mjk3NDYsImV4cCI6MjA2NzMwNTc0Nn0._z_tqm_5UIBkWfMa7HAJrUOA-0t9vOaBVV48-74esWQ";
 
     
-      // Quick sanity probe
-      const test = activeField.sample(54.5, -114.0);
+      const url = `${SUPABASE_URL}/rest/v1/wind_files?select=*&order=valid_time.desc&limit=1`;
     
-      // Animate forecast blending
-      let t = 0;
-      setInterval(() => {
-        const i = Math.floor(t) % uJsons.length;
-        const j = (i + 1) % uJsons.length;
-        const a = t - Math.floor(t);
-        
-        windTime.i = i;
-        windTime.a = a;
+      const res = await fetch(url, {
+        headers: {
+          apikey: API_KEY,
+          Authorization: `Bearer ${API_KEY}`
+        }
+      });
     
-        const f1 = buildField(uJsons[i], vJsons[i]);
-        const f2 = buildField(uJsons[j], vJsons[j]);
+      const rows = await res.json();
     
-        activeField = {
-          ...f1,
-          sample: (lat, lon) => {
-            const w1 = f1.sample(lat, lon);
-            const w2 = f2.sample(lat, lon);
-            if (!w1 || !w2) return null;
+      if (!rows || rows.length === 0) {
+        throw new Error("No wind files found");
+      }
     
-            const u = (1 - a) * w1.u + a * w2.u;
-            const v = (1 - a) * w1.v + a * w2.v;
-            return { u, v, speed: Math.sqrt(u * u + v * v) };
-          }
-        };
+      const filePath = rows[0].file_path;
     
-        windLayer.updateField(activeField);
-        t += 0.02;
-      }, 1000);
+      console.log("Loading wind file:", filePath);
     
-      info.textContent = "Wind loaded (particles running)";
-      return field;
+      return await fetchWindFile(filePath); 
     }
 
-    
+     
 
     
     const windLayer = new WindLayer();
@@ -571,43 +541,43 @@
     });
 
 
-    
+   
 
-    loadWind()
-      .then(f => {
-        windLayer.setField(f);
+    async function loadWind() {
+      const info = document.getElementById("info");
+      info.textContent = "Loading wind JSON…";
     
-        // Immediately show correct diagnostics
-        document.getElementById("info").innerHTML = getWindTimeDiagnostics();
+      const { data, meta } = await fetchLatestWindFromSupabase();
     
-        // Update diagnostics every minute
-        setInterval(() => {
-          document.getElementById("info").innerHTML = getWindTimeDiagnostics();
-        }, 60000);
-      })
-      .catch(err => {
-        document.getElementById("info").textContent = "ERROR: " + err.message;
-        console.error(err);
-      });
-
-
+      const activeField = buildField(
+        { header: data.header, data: data.u },
+        { header: data.header, data: data.v }
+      );
     
-    // Reload wind data every hour on the hour
-    function scheduleHourlyReload() {
-      const now = new Date(Date.now());
-      const nextHour = new Date(now);
-      nextHour.setHours(now.getHours() + 1, 0, 5, 0); // 5 sec after hour
+      field = activeField;
     
-      const delay = nextHour - now;
+      windTime.baseUTC = new Date(activeField.modelTime.endsWith("Z") 
+        ? activeField.modelTime 
+        : activeField.modelTime + "Z");
     
-      setTimeout(() => {
-        console.log("🔄 Hourly wind refresh");
-        loadWind().then(f => windLayer.setField(f));
-        scheduleHourlyReload();
-      }, delay);
+      const test = activeField.sample(54.5, -114.0);
+      console.log("Wind test sample:", test);
+    
+      info.textContent = "Wind loaded (particles running)";
+      return field;
     }
+
     
-    scheduleHourlyReload();
+    loadWind().then(f => {
+      windLayer.setField(f);
+    
+      document.getElementById("info").innerHTML = getWindTimeDiagnostics();
+    
+      setInterval(() => {
+        document.getElementById("info").innerHTML = getWindTimeDiagnostics();
+      }, 60000);
+    });
+    
         
   </script>
 </body>
