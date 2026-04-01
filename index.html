@@ -461,6 +461,58 @@
       };
     }
 
+
+    function buildFieldFromGrid(grid, meta) {
+      const nx = grid.nx;
+      const ny = grid.ny;
+      const lon0 = grid.lo1;
+      const lat0 = grid.la1;
+      const dx = grid.dx;
+      const dy = grid.dy;
+    
+      const uData = grid.u;
+      const vData = grid.v;
+    
+      return {
+        nx, ny, lon0, lat0, dx, dy,
+        modelTime: meta?.run || null,
+        sample: (lat, lon) => {
+          const fx = (lon - lon0) / dx;
+          const fy = (lat0 - lat) / dy;
+    
+          const i0 = Math.floor(fx);
+          const j0 = Math.floor(fy);
+          const i1 = i0 + 1;
+          const j1 = j0 + 1;
+    
+          if (i0 < 0 || i1 >= nx || j0 < 0 || j1 >= ny) return null;
+    
+          const tx = fx - i0;
+          const ty = fy - j0;
+    
+          const idx00 = j0 * nx + i0;
+          const idx10 = j0 * nx + i1;
+          const idx01 = j1 * nx + i0;
+          const idx11 = j1 * nx + i1;
+    
+          const u00 = uData[idx00], u10 = uData[idx10], u01 = uData[idx01], u11 = uData[idx11];
+          const v00 = vData[idx00], v10 = vData[idx10], v01 = vData[idx01], v11 = vData[idx11];
+    
+          if ([u00,u10,u01,u11,v00,v10,v01,v11].some(v => v == null)) return null;
+    
+          const uu = (1-tx)*(1-ty)*u00 + tx*(1-ty)*u10 + (1-tx)*ty*u01 + tx*ty*u11;
+          const vv = (1-tx)*(1-ty)*v00 + tx*(1-ty)*v10 + (1-tx)*ty*v01 + tx*ty*v11;
+    
+          return {
+            u: uu,
+            v: vv,
+            speed: Math.sqrt(uu*uu + vv*vv)
+          };
+        }
+      };
+    }
+
+    
     async function fetchLatestWindFromSupabase() {
       const SUPABASE_URL = "https://zcunoncbyitfsilrhymv.supabase.co";
       const API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpjdW5vbmNieWl0ZnNpbHJoeW12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE3Mjk3NDYsImV4cCI6MjA2NzMwNTc0Nn0._z_tqm_5UIBkWfMa7HAJrUOA-0t9vOaBVV48-74esWQ";
@@ -549,16 +601,17 @@
     
       const { data, meta } = await fetchLatestWindFromSupabase();
     
-      const activeField = buildField(
-        { header: data.header, data: data.u },
-        { header: data.header, data: data.v }
-      );
+      const activeField = buildFieldFromGrid(data.grid, data.meta);
     
       field = activeField;
     
-      windTime.baseUTC = new Date(activeField.modelTime.endsWith("Z") 
-        ? activeField.modelTime 
-        : activeField.modelTime + "Z");
+      if (activeField.modelTime) {
+        windTime.baseUTC = new Date(
+          activeField.modelTime.endsWith("Z")
+            ? activeField.modelTime
+            : activeField.modelTime + "Z"
+        );
+      }
     
       const test = activeField.sample(54.5, -114.0);
       console.log("Wind test sample:", test);
