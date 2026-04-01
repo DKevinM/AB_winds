@@ -465,7 +465,9 @@
   
   async function loadNPRI() {
     const res = await fetch("https://dkevinm.github.io/AB_datapull/data/output/NPRI.geojson");
-    return await res.json();
+    const data = await res.json();
+    window.NPRI_FC = data;
+    return data;
   }
 
 
