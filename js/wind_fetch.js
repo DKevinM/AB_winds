@@ -112,10 +112,15 @@ function extractWindAtPoint(data, lat, lon) {
 
   const idx = j * grid.nx + i;
 
-  const u = fields["ugrd10"][idx];
-  const v = fields["vgrd10"][idx];
-
-  if (u == null || v == null) return null;
+  const uField = fields["ugrd10"];
+  const vField = fields["vgrd10"];
+  
+  // handle both [ny,nx] and [1,ny,nx]
+  const u2d = Array.isArray(uField[0][0]) ? uField[0] : uField;
+  const v2d = Array.isArray(vField[0][0]) ? vField[0] : vField;
+  
+  const u = u2d[j]?.[i];
+  const v = v2d[j]?.[i];
 
   const ws = Math.sqrt(u*u + v*v);
   const wd = (Math.atan2(u, v) * 180 / Math.PI + 360) % 360;
