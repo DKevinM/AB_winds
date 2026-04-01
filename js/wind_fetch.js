@@ -73,11 +73,22 @@ async function fetchWindFile(storagePath) {
       console.error("No JSON found in decompressed data");
       return null;
     }
-    const cleaned = decompressed.substring(start);
 
-    console.log("First 100 chars:", cleaned.slice(0, 100));    
     
-    const data = JSON.parse(cleaned);
+    const cleaned = decompressed.substring(start);
+    
+    console.log("First 100 chars:", cleaned.slice(0, 100));
+    
+    // repair invalid JSON tokens produced by Python/NumPy
+    const repaired = cleaned
+      .replace(/\bNaN\b/g, "null")
+      .replace(/\b-Infinity\b/g, "null")
+      .replace(/\bInfinity\b/g, "null");
+    
+    const data = JSON.parse(repaired);
+    
+    
+    
     console.log("Loaded as gzip (fixed)");
     return data;
   } catch (err) {
