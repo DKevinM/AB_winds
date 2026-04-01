@@ -240,8 +240,20 @@ def process_run(run):
 
         fname = f"{OUTDIR}/ab_met_{run:%Y%m%d_%HZ}_f{lead:03d}.json.gz"
 
+        def sanitize_json(obj):
+            if isinstance(obj, dict):
+                return {k: sanitize_json(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [sanitize_json(v) for v in obj]
+            if isinstance(obj, float):
+                if np.isnan(obj) or np.isinf(obj):
+                    return None
+            return obj
+        
+        clean_payload = sanitize_json(payload)
+        
         with gzip.open(fname, "wt", encoding="utf-8") as f:
-            json.dump(payload, f)
+            json.dump(clean_payload, f, allow_nan=False)
 
         print("Saved:", fname)
 
