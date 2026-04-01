@@ -56,7 +56,10 @@ def upload_to_supabase(local_path, storage_path):
             supabase.storage.from_("winds").upload(
                 path=storage_path,
                 file=f,
-                file_options={"content-type": "application/gzip"}
+                file_options={
+                    "content-type": "application/json",
+                    "content-encoding": "gzip"
+                }
             )
         except Exception as e:
             if "already exists" in str(e).lower():
