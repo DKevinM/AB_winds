@@ -626,7 +626,7 @@
     }
 
 
-    function drawSurfaceProbabilityGrid(cells, receptorLat, receptorLon, dlat = 0.02, dlon = 0.02) {
+    function drawSurfaceProbabilityGrid(cells, receptorLat, receptorLon, winds3h, dlat = 0.02, dlon = 0.02)
     
       if (!cells.length) return;
     
@@ -1064,7 +1064,7 @@ map.on("click", async (e) => {
     });
 
     const footprint = buildFootprint(trajectories, 0.015, 0.015);
-    drawSurfaceProbabilityGrid(footprint, lat, lng, 0.015, 0.015);  
+    drawSurfaceProbabilityGrid(footprint, lat, lng, winds3h, 0.015, 0.015);  
     const dom       = computeDominantDirection(trajectories);
 
     // Draw all ensemble members (fainter) + bubbles
