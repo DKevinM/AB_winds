@@ -99,7 +99,6 @@
     <b>Trajectory Layers</b><br>
     <span style="color:#2c7fb8">●</span> Back trajectory (HRDPS wind)<br>
     <span style="color:#8c510a">●</span> Surface touchdown influence<br>
-    <span style="color:#000">⋯</span> Centerline
     `;
   
     return div;
@@ -134,7 +133,6 @@
   // }).addTo(map);
 
 
-  const centerlineLayer = L.layerGroup().addTo(map);
   const touchdownLayer  = L.layerGroup().addTo(map);
   const surfaceTrajLayer = L.layerGroup().addTo(map);
 
@@ -153,7 +151,6 @@
     "Surface Trajectory (10 m)": surfaceTrajLayer,
     "Surface Touchdowns": touchdownLayer,
     "Surface Probability Grid": surfaceProbLayer,
-    "Centerline": centerlineLayer,
     
     "AQHI Stations": stationLayerGroup,
     "PurpleAir Sensors": purpleLayerGroup,
@@ -539,7 +536,7 @@
   
     for (const layer of heightLevels) {
       for (let p = 0; p < nParticles; p++) {
-        const spread = 0.01;
+        const spread = 0.005;
         let offset = 0;
         
         if(layer.name === "surface") offset = 0.0;
@@ -564,8 +561,8 @@
         
           for (let s = 0; s < subSteps; s++) {
         
-            let ws = w.ws * (0.8 + 0.4 * Math.random());
-            let wd = w.wd + (Math.random() - 0.5) * 20;
+            let ws = w.ws;
+            let wd = w.wd + (Math.random() - 0.5) * 10;
         
             const terrainTurn = await terrainSteering(
               lat0,
@@ -993,7 +990,6 @@ map.on("click", async (e) => {
   surfaceTrajLayer.clearLayers();
   touchdownLayer.clearLayers();
   surfaceProbLayer.clearLayers();  
-  centerlineLayer.clearLayers();
   receptorLayer.clearLayers();
   
   
@@ -1098,14 +1094,10 @@ map.on("click", async (e) => {
       start_lon: lng
     });
 
-    // Draw centreline
-    L.geoJSON(trajFeature, {
-      style: { weight: 3, opacity: 0.9, dashArray:"6,6", color:"#000" }
-    }).addTo(centerlineLayer);
 
     // 3) Ensemble trajectories + footprint ("bubbles")
     const trajectories = await computeEnsembleTrajectories(lat, lng, w, {
-      nParticles: 40,
+      nParticles: 25,
       hoursBack: winds3h.length,
       startElevation: startElevation,
       windSeries: winds3h
@@ -1122,7 +1114,7 @@ map.on("click", async (e) => {
     // 4) Who sits under the plume?  Use the footprint, not just the line
     const stationHits = pointsInFootprint(window.STATIONS_FC, footprint, 20); // km
     const purpleHits  = pointsInFootprint(window.PURPLE_FC,   footprint, 20);
-    const npriHits = window.NPRI_FC.features
+    const npriHits = pointsInFootprint(window.NPRI_FC, footprint, 10);
       .map(f => {
         const ll = getFeatureLatLon(f);
         if(!ll) return null;
@@ -1157,7 +1149,7 @@ map.on("click", async (e) => {
         const nm = p.stationName || p.StationName || "Station";
         let aq   = p.aqhi ?? p.AQHI ?? "N/A";
         if (!isNaN(+aq)) aq = (+aq > 10 ? "10+" : (+aq).toFixed(0));
-        return `${nm} — AQHI: ${aq} (≈${h.dist_km.toFixed(1)} km from footprint)`;
+        return `${nm} (≈${h.dist_km.toFixed(1)} km from footprint)`;
       }
     );
 
