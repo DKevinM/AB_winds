@@ -388,7 +388,7 @@
         modelTime: meta?.run || null,
         sample: (lat, lon) => {
           const fx = (lon - lon0) / dx;
-          const fy = (lat - lat0) / dy;
+          const fy = (lat0 - lat) / dy;
     
           const i0 = Math.floor(fx);
           const j0 = Math.floor(fy);
