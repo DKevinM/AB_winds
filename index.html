@@ -578,11 +578,11 @@ async function loadWind() {
 
   
   console.log("GRID BOUNDS:", {
-    latMax: grid.la1,
-    latMin: grid.la1 - grid.dy * (grid.ny - 1),
-    lonMin: grid.lo1,
-    lonMax: grid.lo1 + grid.dx * (grid.nx - 1)
-  });  
+    latMax: data.grid.la1,
+    latMin: data.grid.la1 - data.grid.dy * (data.grid.ny - 1),
+    lonMin: data.grid.lo1,
+    lonMax: data.grid.lo1 + data.grid.dx * (data.grid.nx - 1)
+  });
   
   
   info.textContent = "Wind loaded (particles running)";
