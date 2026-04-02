@@ -380,7 +380,7 @@
       const uData = fields.ugrd10;
       const vData = fields.vgrd10;
 
-      console.log("FIELDS:", data.fields);
+      console.log("FIELDS:", fields);
       console.log("grid dims:", uTest.length, uTest[0].length);
       console.log("center sample raw:", uTest[300][300], vTest[300][300]);
       
@@ -552,9 +552,9 @@ async function loadWind() {
   
   console.log("DATA:", data);
 
-  console.log("FIELDS:", data.fields);
+  console.log("FIELDS:", fields);
 
-  const activeField = buildFieldFromGrid(data.grid, data.meta, data.fields);
+  const activeField = buildFieldFromGrid(grid,meta,fields);
   field = activeField;
 
   if (activeField.modelTime) {
@@ -567,18 +567,18 @@ async function loadWind() {
     windTime.baseUTC = null;
   }
 
-  const midLat = data.grid.la1 - (data.grid.dy * data.grid.ny / 2);
-  const midLon = data.grid.lo1 + (data.grid.dx * data.grid.nx / 2);
+  const midLat = grid.la1 - (grid.dy * grid.ny / 2);
+  const midLon = grid.lo1 + (grid.dx * grid.nx / 2);
   
   const test = activeField.sample(midLat, midLon);
   console.log("MID GRID TEST:", test);
 
   
   console.log("GRID BOUNDS:", {
-    latMax: data.grid.la1,
-    latMin: data.grid.la1 - data.grid.dy * (data.grid.ny - 1),
-    lonMin: data.grid.lo1,
-    lonMax: data.grid.lo1 + data.grid.dx * (data.grid.nx - 1)
+    latMax: grid.la1,
+    latMin: grid.la1 - grid.dy * (grid.ny - 1),
+    lonMin: grid.lo1,
+    lonMax: grid.lo1 + grid.dx * (grid.nx - 1)
   });  
   
   
