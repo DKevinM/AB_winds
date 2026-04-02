@@ -405,7 +405,25 @@
           const u00 = uData[idx00], u10 = uData[idx10], u01 = uData[idx01], u11 = uData[idx11];
           const v00 = vData[idx00], v10 = vData[idx10], v01 = vData[idx01], v11 = vData[idx11];
     
-          if ([u00,u10,u01,u11,v00,v10,v01,v11].some(v => v == null)) return null;
+          const candidates = [
+            { u: u00, v: v00 },
+            { u: u10, v: v10 },
+            { u: u01, v: v01 },
+            { u: u11, v: v11 }
+          ].filter(c => c.u != null && c.v != null);
+          
+          if (candidates.length === 0) {
+            return { u: 0, v: 0, speed: 0 };
+          }
+          
+          if (candidates.length < 4) {
+            const c = candidates[0]; // nearest valid
+            return {
+              u: c.u,
+              v: c.v,
+              speed: Math.sqrt(c.u * c.u + c.v * c.v)
+            };
+          }
     
           const uu = (1-tx)*(1-ty)*u00 + tx*(1-ty)*u10 + (1-tx)*ty*u01 + tx*ty*u11;
           const vv = (1-tx)*(1-ty)*v00 + tx*(1-ty)*v10 + (1-tx)*ty*v01 + tx*ty*v11;
