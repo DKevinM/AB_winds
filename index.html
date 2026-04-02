@@ -11,7 +11,7 @@
   />
 
   <style>
-    html, body { height: 100%; margin: 0; }
+    html, body { height: 100%; margin: 0; }f
     #map { height: 100%; width: 100%; }
     .info {
       position: absolute;
@@ -379,6 +379,10 @@
     
       const uData = fields.ugrd10;
       const vData = fields.vgrd10;
+
+      console.log("FIELDS:", data.fields);
+      console.log("grid dims:", uTest.length, uTest[0].length);
+      console.log("center sample raw:", uTest[300][300], vTest[300][300]);
       
       console.log("uData sample:", uData[0], uData[1000], uData.length);
       console.log("expected size:", nx * ny);      
@@ -563,9 +567,21 @@ async function loadWind() {
     windTime.baseUTC = null;
   }
 
-  const test = activeField.sample(54.5, -114.0);
-  console.log("Wind test sample:", test);
+  const midLat = data.grid.la1 - (data.grid.dy * data.grid.ny / 2);
+  const midLon = data.grid.lo1 + (data.grid.dx * data.grid.nx / 2);
+  
+  const test = activeField.sample(midLat, midLon);
+  console.log("MID GRID TEST:", test);
 
+  
+  console.log("GRID BOUNDS:", {
+    latMax: data.grid.la1,
+    latMin: data.grid.la1 - data.grid.dy * (data.grid.ny - 1),
+    lonMin: data.grid.lo1,
+    lonMax: data.grid.lo1 + data.grid.dx * (data.grid.nx - 1)
+  });  
+  
+  
   info.textContent = "Wind loaded (particles running)";
   return field;
 }   
