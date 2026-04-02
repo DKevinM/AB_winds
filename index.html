@@ -469,7 +469,12 @@ async function loadWind() {
 
 
   function sampleWind(lat, lon) {
-    const w = extractWindAtPoint(data, lat, lon);
+    const latMax = data.grid.la1;
+    const latMin = data.grid.la1 - data.grid.dy * (data.grid.ny - 1);
+  
+    const flippedLat = latMax - (lat - latMin);
+  
+    const w = extractWindAtPoint(data, flippedLat, lon);
   
     if (!w) return null;
   
@@ -479,8 +484,8 @@ async function loadWind() {
     if (u == null || v == null) return null;
   
     return {
-      u: u,
-      v: v,
+      u,
+      v,
       speed: Math.sqrt(u * u + v * v)
     };
   }
