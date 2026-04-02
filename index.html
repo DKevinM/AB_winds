@@ -388,12 +388,20 @@
         modelTime: meta?.run || null,
         sample: (lat, lon) => {
           const fx = (lon - lon0) / dx;
-          const fy = (lat0 - lat) / dy;
+          const fy = (lat - lat0) / dy;
     
           const i0 = Math.floor(fx);
           const j0 = Math.floor(fy);
           const i1 = i0 + 1;
           const j1 = j0 + 1;
+          
+          // FULL bounds check (all 4 corners)
+          if (
+            j0 < 0 || j1 >= uData.length ||
+            i0 < 0 || i1 >= uData[0].length
+          ) {
+            return null;
+          }
     
           if (i0 < 0 || i1 >= nx || j0 < 0 || j1 >= ny) return null;
     
