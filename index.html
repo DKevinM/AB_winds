@@ -311,10 +311,10 @@
         ctx.save();
 
         // Fade trails by removing alpha (not painting black)
-        ctx.globalCompositeOperation = "destination-out";
-        ctx.fillStyle = "rgba(0,0,0,0.05)";
-        ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
-        ctx.globalCompositeOperation = "source-over";
+        // ctx.globalCompositeOperation = "destination-out";
+        // ctx.fillStyle = "rgba(0,0,0,0.05)";
+        // ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
+        // ctx.globalCompositeOperation = "source-over";
         
         // Apply Alberta mask
         // if (this._maskPath) ctx.clip(this._maskPath, "evenodd");
@@ -331,6 +331,7 @@
 
           const ll = { lat: p.lat, lon: p.lon };
           const v = this._field.sample(ll.lat, ll.lon);
+          
           if (!v || !isFinite(v.u) || !isFinite(v.v)) {
             Object.assign(p, this._randomParticle());
             continue;
