@@ -468,8 +468,8 @@
       const dx = grid.dx;
       const dy = grid.dy;
     
-      const uData = fields.u || fields.U || fields.ugrd;
-      const vData = fields.v || fields.V || fields.vgrd;
+      const uData = fields.ugrd10;
+      const vData = fields.vgrd10;
       
       return {
         nx, ny, lon0, lat0, dx, dy,
