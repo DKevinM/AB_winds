@@ -40,7 +40,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
-
+  <script src="js/wind_fetch.js"></script>
 
 
 
@@ -142,7 +142,6 @@
     ]).then(() => {
       L.control.layers(null, overlays, { collapsed: false }).addTo(map);
     });
-
 
 
     
@@ -283,7 +282,9 @@
     
           const v = f.sample(lat, lon);
           if (!v) continue;
-    
+
+      
+              
           const pt = this._latLngToCanvasPoint(lat, lon);
           if (pt.x >= 0 && pt.y >= 0 && pt.x <= this._canvas.width && pt.y <= this._canvas.height) {
             return { lat, lon, age: Math.random() * 200 };
@@ -369,91 +370,7 @@
 
 
 
-    function buildFieldFromGrid(grid, meta, fields) {
-      const nx = grid.nx;
-      const ny = grid.ny;
-      const lon0 = grid.lo1;
-      const lat0 = grid.la1;
-      const dx = grid.dx;
-      const dy = grid.dy;
-    
-      const uData = fields.ugrd10;
-      const vData = fields.vgrd10;
 
-      console.log("FIELDS:", fields);
-      
-      console.log("uData sample:", uData[0], uData[1000], uData.length);
-      console.log("expected size:", nx * ny);      
-      
-      return {
-        nx, ny, lon0, lat0, dx, dy,
-        modelTime: meta?.run || null,
-        sample: (lat, lon) => {
-          const fx = (lon - lon0) / dx;
-          const fy = (lat0 - lat) / dy;
-    
-          const i0 = Math.floor(fx);
-          const j0 = Math.floor(fy);
-          const i1 = i0 + 1;
-          const j1 = j0 + 1;
-          
-          // FULL bounds check (all 4 corners)
-          if (
-            j0 < 0 || j1 >= uData.length ||
-            i0 < 0 || i1 >= uData[0].length
-          ) {
-            return null;
-          }
-    
-          if (i0 < 0 || i1 >= nx || j0 < 0 || j1 >= ny) return null;
-    
-          const tx = fx - i0;
-          const ty = fy - j0;
-    
-          const u00 = uData[j0][i0];
-          const u10 = uData[j0][i1];
-          const u01 = uData[j1][i0];
-          const u11 = uData[j1][i1];
-          
-          const v00 = vData[j0][i0];
-          const v10 = vData[j0][i1];
-          const v01 = vData[j1][i0];
-          const v11 = vData[j1][i1];
-          
-    
-          const candidates = [
-            { u: u00, v: v00 },
-            { u: u10, v: v10 },
-            { u: u01, v: v01 },
-            { u: u11, v: v11 }
-          ].filter(c => c.u != null && c.v != null);
-          
-          if (candidates.length === 0) {
-            return { u: 0, v: 0, speed: 0 };
-          }
-          
-          if (candidates.length < 4) {
-            const c = candidates[0]; // nearest valid
-            return {
-              u: c.u,
-              v: c.v,
-              speed: Math.sqrt(c.u * c.u + c.v * c.v)
-            };
-          }
-    
-          const uu = (1-tx)*(1-ty)*u00 + tx*(1-ty)*u10 + (1-tx)*ty*u01 + tx*ty*u11;
-          const vv = (1-tx)*(1-ty)*v00 + tx*(1-ty)*v10 + (1-tx)*ty*v01 + tx*ty*v11;
-    
-          return {
-            u: uu,
-            v: vv,
-            speed: Math.sqrt(uu*uu + vv*vv)
-          };
-        }
-      };
-    }
-
-    
    
 
     
@@ -547,24 +464,41 @@ async function loadWind() {
   const text = pako.inflate(buffer, { to: "string" });
   const data = JSON.parse(text);
 
+
+  function sampleWind(lat, lon) {
+    const w = extractWindAtPoint(data, lat, lon);
+  
+    if (!w) return null;
+  
+    return {
+      u: w.u,
+      v: w.v,
+      speed: Math.sqrt(w.u * w.u + w.v * w.v)
+    };
+  }
   
   console.log("DATA:", data);
 
   console.log("FIELDS:", data.fields);
   
-  const activeField = buildFieldFromGrid(
-    data.grid,
-    data.meta,
-    data.fields
-  );
-  
-  field = activeField;
 
-  if (activeField.modelTime) {
+  
+  field = {
+    sample: (lat, lon) => sampleWind(lat, lon),
+    modelTime: data.meta?.run || null,
+    lon0: data.grid.lo1,
+    lat0: data.grid.la1,
+    dx: data.grid.dx,
+    dy: data.grid.dy,
+    nx: data.grid.nx,
+    ny: data.grid.ny
+  };
+
+  if (field.modelTime) {
     windTime.baseUTC = new Date(
-      activeField.modelTime.endsWith("Z")
-        ? activeField.modelTime
-        : activeField.modelTime + "Z"
+      field.modelTime.endsWith("Z")
+        ? field.modelTime
+        : field.modelTime + "Z"
     );
   } else {
     windTime.baseUTC = null;
@@ -573,7 +507,7 @@ async function loadWind() {
   const midLat = data.grid.la1 - (data.grid.dy * data.grid.ny / 2);
   const midLon = data.grid.lo1 + (data.grid.dx * data.grid.nx / 2);
   
-  const test = activeField.sample(midLat, midLon);
+  const test = sampleWind(midLat, midLon);
   console.log("MID GRID TEST:", test);
 
   
