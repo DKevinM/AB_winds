@@ -436,7 +436,12 @@
           const u00 = uData[idx00], u10 = uData[idx10], u01 = uData[idx01], u11 = uData[idx11];
           const v00 = vData[idx00], v10 = vData[idx10], v01 = vData[idx01], v11 = vData[idx11];
           
-          if ([u00,u10,u01,u11,v00,v10,v01,v11].some(v => v == null)) return null;
+          if (
+            u00 == null || u10 == null || u01 == null || u11 == null ||
+            v00 == null || v10 == null || v01 == null || v11 == null
+          ) {
+            return { u: 0, v: 0, speed: 0 };
+          }
           
           // Bilinear interpolation
           const uu = (1-tx)*(1-ty)*u00 + tx*(1-ty)*u10 + (1-tx)*ty*u01 + tx*ty*u11;
