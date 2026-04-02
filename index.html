@@ -460,7 +460,7 @@
     }
 
 
-    function buildFieldFromGrid(grid, meta) {
+    function buildFieldFromGrid(grid, meta, fields)
       const nx = grid.nx;
       const ny = grid.ny;
       const lon0 = grid.lo1;
@@ -468,8 +468,8 @@
       const dx = grid.dx;
       const dy = grid.dy;
     
-      const uData = grid.u;
-      const vData = grid.v;
+      const uData = fields.u;
+      const vData = fields.v;
     
       return {
         nx, ny, lon0, lat0, dx, dy,
@@ -607,7 +607,7 @@ async function loadWind() {
   
   console.log("DATA:", data);
 
-  const activeField = buildFieldFromGrid(data.grid, data.meta);
+  const activeField = buildFieldFromGrid(data.grid, data.meta, data.fields);
   field = activeField;
 
   if (activeField.modelTime) {
