@@ -377,8 +377,16 @@
       const dx = grid.dx;
       const dy = grid.dy;
     
-      const uData = fields.ugrd10[0];
-      const vData = fields.vgrd10[0];
+      const uData = Array.isArray(fields.ugrd10[0])
+        ? fields.ugrd10[0]
+        : fields.ugrd10;
+      
+      const vData = Array.isArray(fields.vgrd10[0])
+        ? fields.vgrd10[0]
+        : fields.vgrd10;
+      
+      console.log("uData sample:", uData[0], uData[1000], uData.length);
+      console.log("expected size:", nx * ny);      
       
       return {
         nx, ny, lon0, lat0, dx, dy,
