@@ -468,12 +468,8 @@
       const dx = grid.dx;
       const dy = grid.dy;
     
-      const uData = fields.u;
-      const vData = fields.v;
-
-      if (!fields || !fields.u || !fields.v) {
-        throw new Error("Missing wind fields");
-      }
+      const uData = fields.u || fields.U || fields.ugrd;
+      const vData = fields.v || fields.V || fields.vgrd;
       
       return {
         nx, ny, lon0, lat0, dx, dy,
@@ -610,6 +606,8 @@ async function loadWind() {
 
   
   console.log("DATA:", data);
+
+  console.log("FIELDS:", data.fields);
 
   const activeField = buildFieldFromGrid(data.grid, data.meta, data.fields);
   field = activeField;
