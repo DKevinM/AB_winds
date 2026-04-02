@@ -231,8 +231,8 @@
         const addRing = (ring) => {
           ring.forEach(([lon, lat], i) => {
             const p = this._latLngToCanvasPoint(lat, lon);
-            if (i === 0) path.moveTo(p.lat, p.lon);
-            else path.lineTo(p.lat, p.lon);
+            if (i === 0) path.moveTo(p.x, p.y);
+            else path.lineTo(p.x, p.y);
           });
           path.closePath();
         };
@@ -368,102 +368,6 @@
     });
 
 
-    // ---------- Parse your JSONs into a sampler ----------
-    function readHeader(json) {
-      // Try common variants. Adjust once we see your actual header keys.
-      const h = json.header || json[0]?.header || json;
-      return {
-        lo1: h.lo1 ?? h.lon0 ?? h.lo ?? h.lo1,
-        la1: h.la1 ?? h.lat0 ?? h.la ?? h.la1,
-        dx:  h.dx  ?? h.dlon ?? h.dx,
-        dy:  h.dy  ?? h.dlat ?? h.dy,
-        nx:  h.nx  ?? h.Nx   ?? h.nx,
-        ny:  h.ny  ?? h.Ny   ?? h.ny,
-      };
-    }
-
-    function buildField(uJson, vJson) {     
-      const uh = uJson.header;
-      const vh = vJson.header;
-
-      const modelTime = uh.refTime || uh.referenceTime || uh.time || "Unknown time";
-
-      
-      // Your actual grid parameters
-      const nx = uh.nx;          // 354
-      const ny = uh.ny;          // 540
-      const lon0 = uh.lo1;       // -121.76788
-      const lat0 = uh.la1;       // 60.64398 (NORTHERN point)
-      const dx = uh.dx;          // 0.04537
-      const dy = uh.dy;          // 0.02274 POSITIVE = goes SOUTHWARD
-           
-      const uData = uJson.data;
-      const vData = vJson.data;
-      
-      // Find first non-null value
-      let firstNonNull = -1;
-      for (let i = 0; i < uData.length; i++) {
-        if (uData[i] !== null) {
-          firstNonNull = i;
-          break;
-        }
-      }
-      
-      
-      return {
-        nx, ny, lon0, lat0, dx, dy,modelTime,
-        sample: (lat, lon) => {
-
-          // Fractional grid position
-          const fx = (lon - lon0) / dx;
-          const fy = (lat0 - lat) / dy;
-          
-          const i0 = Math.floor(fx);
-          const j0 = Math.floor(fy);
-          const i1 = i0 + 1;
-          const j1 = j0 + 1;
-          
-          if (i0 < 0 || i1 >= nx || j0 < 0 || j1 >= ny) return null;
-          
-          const tx = fx - i0;
-          const ty = fy - j0;
-          
-          const idx00 = j0 * nx + i0;
-          const idx10 = j0 * nx + i1;
-          const idx01 = j1 * nx + i0;
-          const idx11 = j1 * nx + i1;
-          
-          const u00 = uData[idx00], u10 = uData[idx10], u01 = uData[idx01], u11 = uData[idx11];
-          const v00 = vData[idx00], v10 = vData[idx10], v01 = vData[idx01], v11 = vData[idx11];
-          
-          if (
-            u00 == null || u10 == null || u01 == null || u11 == null ||
-            v00 == null || v10 == null || v01 == null || v11 == null
-          ) {
-            return { u: 0, v: 0, speed: 0 };
-          }
-          
-          // Bilinear interpolation
-          const uu = (1-tx)*(1-ty)*u00 + tx*(1-ty)*u10 + (1-tx)*ty*u01 + tx*ty*u11;
-          const vv = (1-tx)*(1-ty)*v00 + tx*(1-ty)*v10 + (1-tx)*ty*v01 + tx*ty*v11;
-
-          // Handle null/missing data
-          if (uu === null || vv === null || 
-              uu === undefined || vv === undefined) {
-            return null;
-          }
-          
-          const speed = Math.sqrt(uu * uu + vv * vv);
-          
-          return {
-            u: uu,
-            v: vv,
-            speed: speed
-          };
-        }
-      };
-    }
-
 
     function buildFieldFromGrid(grid, meta, fields) {
       const nx = grid.nx;
@@ -473,8 +377,8 @@
       const dx = grid.dx;
       const dy = grid.dy;
     
-      const uData = fields.ugrd10;
-      const vData = fields.vgrd10;
+      const uData = fields.ugrd10[0];
+      const vData = fields.vgrd10[0];
       
       return {
         nx, ny, lon0, lat0, dx, dy,
