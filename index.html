@@ -597,8 +597,14 @@ async function loadWind() {
   const fileURL = `${SUPABASE_URL}/storage/v1/object/public/winds/${filePath}`;
   console.log("Fetching:", fileURL);
 
+
   const res = await fetch(fileURL);
-  const data = await res.json();
+  const buffer = await res.arrayBuffer();
+  
+  const text = pako.inflate(buffer, { to: "string" });
+  const data = JSON.parse(text);
+
+  
   console.log("DATA:", data);
 
   const activeField = buildFieldFromGrid(data.grid, data.meta);
