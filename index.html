@@ -467,28 +467,6 @@ async function loadWind() {
   const text = pako.inflate(buffer, { to: "string" });
   const data = JSON.parse(text);
 
-
-  function sampleWind(lat, lon) {
-    const latMax = data.grid.la1;
-    const latMin = data.grid.la1 - data.grid.dy * (data.grid.ny - 1);
-  
-    const flippedLat = latMax - (lat - latMin);
-  
-    const w = extractWindAtPoint(data, flippedLat, lon);
-  
-    if (!w) return null;
-  
-    const u = w.ugrd10 ?? w.u ?? null;
-    const v = w.vgrd10 ?? w.v ?? null;
-  
-    if (u == null || v == null) return null;
-  
-    return {
-      u,
-      v,
-      speed: Math.sqrt(u * u + v * v)
-    };
-  }
   
   console.log("DATA:", data);
 
@@ -497,7 +475,40 @@ async function loadWind() {
 
   
   field = {
-    sample: (lat, lon) => sampleWind(lat, lon),
+    sample: (lat, lon) => {
+    
+      const grid = data.grid;
+    
+      const nx = grid.nx;
+      const ny = grid.ny;
+      const lon0 = grid.lo1;
+      const lat0 = grid.la1;
+      const dx = grid.dx;
+      const dy = grid.dy;
+    
+      const uData = data.fields.ugrd10[0];
+      const vData = data.fields.vgrd10[0];
+    
+      const fx = (lon - lon0) / dx;
+      const fy = (lat0 - lat) / dy;
+    
+      const i = Math.floor(fx);
+      const j = Math.floor(fy);
+    
+      if (j < 0 || j >= ny || i < 0 || i >= nx) return null;
+    
+      const u = uData[j][i];
+      const v = vData[j][i];
+    
+      if (!isFinite(u) || !isFinite(v)) return null;
+    
+      return {
+        u,
+        v,
+        speed: Math.sqrt(u * u + v * v)
+      };
+    },
+
     modelTime: data.meta?.run || null,
     lon0: data.grid.lo1,
     lat0: data.grid.la1,
