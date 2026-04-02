@@ -381,8 +381,6 @@
       const vData = fields.vgrd10;
 
       console.log("FIELDS:", fields);
-      console.log("grid dims:", uTest.length, uTest[0].length);
-      console.log("center sample raw:", uTest[300][300], vTest[300][300]);
       
       console.log("uData sample:", uData[0], uData[1000], uData.length);
       console.log("expected size:", nx * ny);      
@@ -552,9 +550,14 @@ async function loadWind() {
   
   console.log("DATA:", data);
 
-  console.log("FIELDS:", fields);
-
-  const activeField = buildFieldFromGrid(grid,meta,fields);
+  console.log("FIELDS:", data.fields);
+  
+  const activeField = buildFieldFromGrid(
+    data.grid,
+    data.meta,
+    data.fields
+  );
+  
   field = activeField;
 
   if (activeField.modelTime) {
@@ -567,8 +570,8 @@ async function loadWind() {
     windTime.baseUTC = null;
   }
 
-  const midLat = grid.la1 - (grid.dy * grid.ny / 2);
-  const midLon = grid.lo1 + (grid.dx * grid.nx / 2);
+  const midLat = data.grid.la1 - (data.grid.dy * data.grid.ny / 2);
+  const midLon = data.grid.lo1 + (data.grid.dx * data.grid.nx / 2);
   
   const test = activeField.sample(midLat, midLon);
   console.log("MID GRID TEST:", test);
