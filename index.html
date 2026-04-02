@@ -531,7 +531,7 @@ async function loadWind() {
   const midLat = data.grid.la1 - (data.grid.dy * data.grid.ny / 2);
   const midLon = data.grid.lo1 + (data.grid.dx * data.grid.nx / 2);
   
-  const test = sampleWind(midLat, midLon);
+  const test = field.sample(midLat, midLon);
   console.log("MID GRID TEST:", test);
 
   
