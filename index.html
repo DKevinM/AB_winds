@@ -377,13 +377,8 @@
       const dx = grid.dx;
       const dy = grid.dy;
     
-      const uData = Array.isArray(fields.ugrd10[0])
-        ? fields.ugrd10[0]
-        : fields.ugrd10;
-      
-      const vData = Array.isArray(fields.vgrd10[0])
-        ? fields.vgrd10[0]
-        : fields.vgrd10;
+      const uData = fields.ugrd10;
+      const vData = fields.vgrd10;
       
       console.log("uData sample:", uData[0], uData[1000], uData.length);
       console.log("expected size:", nx * ny);      
@@ -405,13 +400,16 @@
           const tx = fx - i0;
           const ty = fy - j0;
     
-          const idx00 = j0 * nx + i0;
-          const idx10 = j0 * nx + i1;
-          const idx01 = j1 * nx + i0;
-          const idx11 = j1 * nx + i1;
-    
-          const u00 = uData[idx00], u10 = uData[idx10], u01 = uData[idx01], u11 = uData[idx11];
-          const v00 = vData[idx00], v10 = vData[idx10], v01 = vData[idx01], v11 = vData[idx11];
+          const u00 = uData[j0][i0];
+          const u10 = uData[j0][i1];
+          const u01 = uData[j1][i0];
+          const u11 = uData[j1][i1];
+          
+          const v00 = vData[j0][i0];
+          const v10 = vData[j0][i1];
+          const v01 = vData[j1][i0];
+          const v11 = vData[j1][i1];
+          
     
           const candidates = [
             { u: u00, v: v00 },
