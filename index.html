@@ -331,7 +331,10 @@
 
           const ll = { lat: p.lat, lon: p.lon };
           const v = this._field.sample(ll.lat, ll.lon);
-          if (!v) { Object.assign(p, this._randomParticle()); continue; }
+          if (!v || !isFinite(v.u) || !isFinite(v.v)) {
+            Object.assign(p, this._randomParticle());
+            continue;
+          }
           
           const TIME_SCALE = 3.5; 
           const dt = 1100 * TIME_SCALE;
@@ -470,10 +473,15 @@ async function loadWind() {
   
     if (!w) return null;
   
+    const u = w.ugrd10 ?? w.u ?? null;
+    const v = w.vgrd10 ?? w.v ?? null;
+  
+    if (u == null || v == null) return null;
+  
     return {
-      u: w.u,
-      v: w.v,
-      speed: Math.sqrt(w.u * w.u + w.v * w.v)
+      u: u,
+      v: v,
+      speed: Math.sqrt(u * u + v * v)
     };
   }
   
