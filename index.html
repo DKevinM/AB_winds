@@ -11,7 +11,7 @@
   />
 
   <style>
-    html, body { height: 100%; margin: 0; }f
+    html, body { height: 100%; margin: 0; }
     #map { height: 100%; width: 100%; }
     .info {
       position: absolute;
@@ -156,8 +156,8 @@
         this._canvas.width = window.innerWidth;
         this._canvas.height = window.innerHeight;
         
-        this._ctx.fillStyle = "rgba(255, 0, 0, 1)";
-        this._ctx.fillRect(50, 50, 100, 100);
+        // this._ctx.fillStyle = "rgba(255, 0, 0, 1)";
+        // this._ctx.fillRect(50, 50, 100, 100);
         
         console.log("CANVAS ADDED", this._canvas);
         
@@ -377,10 +377,10 @@
 
    
 
-    
+
     const windLayer = new WindLayer();
     windLayer.addTo(map);
-    
+   /* 
     fetch("data/Alberta.geojson")
       .then(r => r.json())
       .then(gj => {
@@ -427,7 +427,7 @@
         .openOn(map);
     });
 
-
+*/
 
 
 
