@@ -290,7 +290,7 @@
           const lon = lonMin + Math.random() * (lonMax - lonMin);
     
           const v = f.sample(lat, lon);
-          if (!v) continue;
+          if (!v || !isFinite(v.u) || !isFinite(v.v)) continue;
 
       
               
@@ -490,9 +490,9 @@ async function loadWind() {
 
   
 
-  const makeField = (dataA) => ({
+  const makeField = (data) => ({
     sample: (lat, lon) => {
-      const grid = dataA.grid;
+      const grid = data.grid;
   
       const nx = grid.nx;
       const ny = grid.ny;
@@ -501,11 +501,13 @@ async function loadWind() {
       const dx = grid.dx;
       const dy = grid.dy;
   
-      const udataA = dataA.fields.ugrd10[0];
-      const vdataA = dataA.fields.vgrd10[0];
+      const udata = data.fields.ugrd10[0];
+      const vdata = data.fields.vgrd10[0];
   
       const fx = (lon - lon0) / dx;
       const fy = (lat0 - lat) / dy;
+
+      if (!isFinite(fx) || !isFinite(fy)) return null;
   
       const i = Math.floor(fx);
       const j = Math.floor(fy);
@@ -513,19 +515,28 @@ async function loadWind() {
       const di = fx - i;
       const dj = fy - j;
   
-      if (j < 0 || j >= ny - 1 || i < 0 || i >= nx - 1) return null;
-  
+      if (
+        !Number.isInteger(i) || !Number.isInteger(j) ||
+        j < 0 || j >= ny - 1 ||
+        i < 0 || i >= nx - 1
+      ) return null;
+
+
+      if (!udata[j] || !udata[j+1]) return null;
+      if (!vdata[j] || !vdata[j+1]) return null;
+      
+      
       const u =
-        udataA[j][i] * (1 - di) * (1 - dj) +
-        udataA[j][i+1] * di * (1 - dj) +
-        udataA[j+1][i] * (1 - di) * dj +
-        udataA[j+1][i+1] * di * dj;
+        udata[j][i] * (1 - di) * (1 - dj) +
+        udata[j][i+1] * di * (1 - dj) +
+        udata[j+1][i] * (1 - di) * dj +
+        udata[j+1][i+1] * di * dj;
   
       const v =
-        vdataA[j][i] * (1 - di) * (1 - dj) +
-        vdataA[j][i+1] * di * (1 - dj) +
-        vdataA[j+1][i] * (1 - di) * dj +
-        vdataA[j+1][i+1] * di * dj;
+        vdata[j][i] * (1 - di) * (1 - dj) +
+        vdata[j][i+1] * di * (1 - dj) +
+        vdata[j+1][i] * (1 - di) * dj +
+        vdata[j+1][i+1] * di * dj;
   
       if (!isFinite(u) || !isFinite(v)) return null;
   
@@ -538,14 +549,20 @@ async function loadWind() {
   const fieldB = makeField(dataB);  
 
 
-  let blendAlpha = 0;
+  setInterval(() => {
+    blendAlpha += 0.005;
+    if (blendAlpha > 1) blendAlpha = 0;
+  }, 100);
   
   field = {
     sample: (lat, lon) => {
       const a = fieldA.sample(lat, lon);
       const b = fieldB.sample(lat, lon);
-  
-      if (!a || !b) return null;
+      
+      // fallback logic
+      if (!a && !b) return null;
+      if (!a) return b;
+      if (!b) return a;
   
       const u = a.u * (1 - blendAlpha) + b.u * blendAlpha;
       const v = a.v * (1 - blendAlpha) + b.v * blendAlpha;
@@ -555,7 +572,16 @@ async function loadWind() {
         v,
         speed: Math.sqrt(u*u + v*v)
       };
-    }
+    },
+
+    lon0: dataA.grid.lo1,
+    lat0: dataA.grid.la1,
+    dx: dataA.grid.dx,
+    dy: dataA.grid.dy,
+    nx: dataA.grid.nx,
+    ny: dataA.grid.ny,    
+
+    modelTime: dataA.meta?.run || null
   };
   
 
