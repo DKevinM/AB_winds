@@ -57,7 +57,7 @@
     const map = L.map("map", { zoomControl: true }).setView([55, -115], 6);
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 12,
+      maxZoom: 18,
       attribution: "&copy; OpenStreetMap"
     }).addTo(map);
 
@@ -156,9 +156,7 @@
         this._canvas.width = window.innerWidth;
         this._canvas.height = window.innerHeight;
         
-        // this._ctx.fillStyle = "rgba(255, 0, 0, 1)";
-        // this._ctx.fillRect(50, 50, 100, 100);
-        
+       
         console.log("CANVAS ADDED", this._canvas);
         
         map.getPanes().overlayPane.appendChild(this._canvas);
@@ -214,7 +212,7 @@
         ctx.clearRect(0, 0, w, h);
 
         
-        if (!this._particles && this._field) this._initParticles();
+        if (this._field) this._initParticles();
         if (this._maskGeoJSON) this._updateMaskPath();
       },
 
@@ -269,8 +267,8 @@
         const width = this._map.getSize().x;
       
         // scale with zoom
-        const density = Math.max(0.5, Math.min(2.2, (zoom - 3) / 4));
-        const count = Math.round(width * 3.0 * density);
+        const density = Math.max(0.6, Math.min(2.5, (zoom - 2) / 3));
+        const count = Math.round(width * 2.5 * density);
         this._particles = Array.from(
           { length: count },
           () => this._randomParticle()
@@ -322,12 +320,12 @@
 
         // Fade previous frame 
         ctx.globalCompositeOperation = "destination-in";
-        ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+        ctx.fillStyle = "rgba(0, 0, 0, 0.60)";
         ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
         ctx.globalCompositeOperation = "source-over";
 
         const zoom = this._map.getZoom();
-        ctx.lineWidth = Math.max(1.6, Math.min(3.2, zoom * 0.35));
+        ctx.lineWidth = Math.max(1.8, Math.min(3.5, zoom * 0.4));
         ctx.beginPath();
       
         for (const p of this._particles) {
@@ -357,19 +355,18 @@
           const p1 = this._latLngToCanvasPoint(p.lat, p.lon);
           const p2 = this._latLngToCanvasPoint(lat2, lon2);
 
-          const c = Math.min(255, Math.round(v.speed * 18));
-          ctx.strokeStyle = `rgba(${Math.max(140, c)}, ${Math.max(100, 220-c)}, 255, 1.0)`;
+          
+          const speed = v.speed;
+          const intensity = Math.min(255, speed * 25);
+          ctx.strokeStyle = `rgba(${intensity}, ${200 - intensity * 0.5}, 255, 1.0)`;
+          ctx.lineWidth = Math.max(1.5, Math.min(4, speed * 0.4));
           ctx.shadowColor = ctx.strokeStyle;
-          ctx.shadowBlur = v.speed > 8 ? 4 : 0;
+          ctx.shadowBlur = v.speed > 6 ? 8 : 3;
 
 
           ctx.moveTo(p1.x, p1.y);
           ctx.lineTo(p2.x, p2.y);
-          // extend line slightly forward (visual density boost)
-          ctx.lineTo(
-            p2.x + (p2.x - p1.x) * 0.3,
-            p2.y + (p2.y - p1.y) * 0.3
-          );
+
           
           // Update particle in geographic space
           p.lat = lat2;
