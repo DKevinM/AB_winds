@@ -325,25 +325,26 @@
 
         // Fade previous frame 
         ctx.globalCompositeOperation = "destination-in";
-        ctx.fillStyle = "rgba(0, 0, 0, 0.50)";
+        ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
         ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
         ctx.globalCompositeOperation = "source-over";
 
         const zoom = this._map.getZoom();
-        ctx.lineWidth = Math.max(1.8, Math.min(3.5, zoom * 0.4));
+        const baseWidth = Math.max(1.5, Math.min(4, speed * 0.4));
+        ctx.lineWidth = speed < 2 ? baseWidth + 0.8 : baseWidth;
         ctx.beginPath();
 
 
         ctx.beginPath();
         // inject new particles every frame (keeps map alive)
         for (let i = 0; i < this._particles.length; i++) {
-          if (Math.random() < 0.015) {
+          if (Math.random() < 0.02) {
             this._particles[i] = this._randomParticle();
           }
         }
         
         for (const p of this._particles) {
-          if (p.age++ > 180) {
+          if (p.age++ > 220) {
             Object.assign(p, this._randomParticle());
             continue;
           }
@@ -462,7 +463,7 @@ async function loadWind() {
   const SUPABASE_URL = "https://zcunoncbyitfsilrhymv.supabase.co";
   const API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpjdW5vbmNieWl0ZnNpbHJoeW12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE3Mjk3NDYsImV4cCI6MjA2NzMwNTc0Nn0._z_tqm_5UIBkWfMa7HAJrUOA-0t9vOaBVV48-74esWQ";
 
-  const url = `${SUPABASE_URL}/rest/v1/wind_files?select=*&order=valid_time.desc&limit=1`;
+  const url = `${SUPABASE_URL}/rest/v1/wind_files?select=*&order=valid_time.desc&limit=2`;
 
   const resMeta = await fetch(url, {
     headers: {
@@ -477,96 +478,99 @@ async function loadWind() {
     throw new Error("No wind files");
   }
 
-  const filePath = rows[0].file_path;
+  const fileA = rows[0];
+  const fileB = rows[1];
   console.log("Loading wind file:", filePath);
 
-  const fileURL = `${SUPABASE_URL}/storage/v1/object/public/winds/${filePath}`;
-  console.log("Fetching:", fileURL);
 
-
-  const res = await fetch(fileURL);
-  const buffer = await res.arrayBuffer();
+  const fetchWind = async (filePath) => {
+    const fileURL = `${SUPABASE_URL}/storage/v1/object/public/winds/${filePath}`;
+    const res = await fetch(fileURL);
+    const buffer = await res.arrayBuffer();
+    const text = pako.inflate(buffer, { to: "string" });
+    return JSON.parse(text);
+  };
   
-  const text = pako.inflate(buffer, { to: "string" });
-  const data = JSON.parse(text);
+  const dataA = await fetchWind(fileA.file_path);
+  const dataB = await fetchWind(fileB.file_path);
 
-  
-  console.log("DATA:", data);
-
-  console.log("FIELDS:", data.fields);
   
 
-  
-  field = {
+  const makeField = (data) => ({
     sample: (lat, lon) => {
-    
       const grid = data.grid;
-    
+  
       const nx = grid.nx;
       const ny = grid.ny;
       const lon0 = grid.lo1;
       const lat0 = grid.la1;
       const dx = grid.dx;
       const dy = grid.dy;
-    
+  
       const uData = data.fields.ugrd10[0];
       const vData = data.fields.vgrd10[0];
-    
-    
+  
       const fx = (lon - lon0) / dx;
       const fy = (lat0 - lat) / dy;
-      
+  
       const i = Math.floor(fx);
       const j = Math.floor(fy);
-      
+  
       const di = fx - i;
       const dj = fy - j;
-      
-      // need one extra cell for interpolation
+  
       if (j < 0 || j >= ny - 1 || i < 0 || i >= nx - 1) return null;
-      
-      const u00 = uData[j][i];
-      const u10 = uData[j][i + 1];
-      const u01 = uData[j + 1][i];
-      const u11 = uData[j + 1][i + 1];
-      
-      const v00 = vData[j][i];
-      const v10 = vData[j][i + 1];
-      const v01 = vData[j + 1][i];
-      const v11 = vData[j + 1][i + 1];
-      
-      // bilinear interpolation
+  
       const u =
-        u00 * (1 - di) * (1 - dj) +
-        u10 * di * (1 - dj) +
-        u01 * (1 - di) * dj +
-        u11 * di * dj;
-      
+        uData[j][i] * (1 - di) * (1 - dj) +
+        uData[j][i+1] * di * (1 - dj) +
+        uData[j+1][i] * (1 - di) * dj +
+        uData[j+1][i+1] * di * dj;
+  
       const v =
-        v00 * (1 - di) * (1 - dj) +
-        v10 * di * (1 - dj) +
-        v01 * (1 - di) * dj +
-        v11 * di * dj;
-      
-     
-    
+        vData[j][i] * (1 - di) * (1 - dj) +
+        vData[j][i+1] * di * (1 - dj) +
+        vData[j+1][i] * (1 - di) * dj +
+        vData[j+1][i+1] * di * dj;
+  
       if (!isFinite(u) || !isFinite(v)) return null;
-    
+  
+      return { u, v, speed: Math.sqrt(u*u + v*v) };
+    }
+  });
+
+  
+  const fieldA = makeField(dataA);
+  const fieldB = makeField(dataB);  
+
+
+  let blendAlpha = 0;
+  
+  field = {
+    sample: (lat, lon) => {
+      const a = fieldA.sample(lat, lon);
+      const b = fieldB.sample(lat, lon);
+  
+      if (!a || !b) return null;
+  
+      const u = a.u * (1 - blendAlpha) + b.u * blendAlpha;
+      const v = a.v * (1 - blendAlpha) + b.v * blendAlpha;
+  
       return {
         u,
         v,
-        speed: Math.sqrt(u * u + v * v)
+        speed: Math.sqrt(u*u + v*v)
       };
-    },
-
-    modelTime: data.meta?.run || null,
-    lon0: data.grid.lo1,
-    lat0: data.grid.la1,
-    dx: data.grid.dx,
-    dy: data.grid.dy,
-    nx: data.grid.nx,
-    ny: data.grid.ny
+    }
   };
+  
+
+  setInterval(() => {
+    blendAlpha += 0.02;
+    if (blendAlpha > 1) blendAlpha = 0;
+  }, 100);
+  
+  
 
   if (field.modelTime) {
     windTime.baseUTC = new Date(
