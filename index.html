@@ -312,6 +312,14 @@
       },
     
       _step: function () {
+        this._lastReset = Date.now();
+        // full reset every ~8 seconds (tune this)
+        if (now - this._lastReset > 8000) {
+          this._initParticles();          // new particles
+          this._ctx.clearRect(0, 0, this._canvas.width, this._canvas.height); // wipe trails
+          this._lastReset = now;
+        }        
+        
         if (!this._field || !this._particles) return;
       
         const ctx = this._ctx;
@@ -355,7 +363,7 @@
           const metersPerDegLat = 111320;
           const metersPerDegLon = 111320 * Math.cos(ll.lat * Math.PI / 180);
           
-          const jitter = 0.0005; // tune small
+          const jitter = 0.0003 + v.speed * 0.0001;
           const lat2 = ll.lat + (v.v * dt) / metersPerDegLat + (Math.random() - 0.5) * jitter;
           const lon2 = ll.lon + (v.u * dt) / metersPerDegLon + (Math.random() - 0.5) * jitter;
           
