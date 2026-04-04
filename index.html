@@ -358,7 +358,7 @@
           const p2 = this._latLngToCanvasPoint(lat2, lon2);
 
           const c = Math.min(255, Math.round(v.speed * 18));
-          ctx.strokeStyle = `rgba(${Math.max(80, c)}, ${Math.max(40, 200-c)}, 255, 0.95)`;
+          ctx.strokeStyle = `rgba(${Math.max(120, c)}, ${Math.max(80, 220-c)}, 255, 1.0)`;
           ctx.shadowColor = ctx.strokeStyle;
           ctx.shadowBlur = v.speed > 8 ? 4 : 0;
 
