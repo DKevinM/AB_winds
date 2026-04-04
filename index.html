@@ -193,8 +193,6 @@
       },
       
 
-
-
       _reset: function () {
         const size = this._map.getSize();
       
@@ -219,10 +217,6 @@
         if (!this._particles && this._field) this._initParticles();
         if (this._maskGeoJSON) this._updateMaskPath();
       },
-
-
-
-
 
 
       setMask: function(geojson) {
@@ -281,7 +275,7 @@
           { length: count },
           () => this._randomParticle()
         );
-      }
+      },
     
       _randomParticle: function() {
         const f = this._field;
@@ -342,7 +336,6 @@
             continue;
           }
       
-
           const ll = { lat: p.lat, lon: p.lon };
           const v = this._field.sample(ll.lat, ll.lon);
           
@@ -351,8 +344,6 @@
             continue;
           }
           
-          const zoom = this._map.getZoom();
-          // slow down when zoomed out, speed up when zoomed in
           const TIME_SCALE = Math.max(1.5, Math.min(5, (zoom - 2) * 0.8));
           
           const dt = 1100 * TIME_SCALE;
