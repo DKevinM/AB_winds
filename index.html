@@ -355,8 +355,9 @@
           const metersPerDegLat = 111320;
           const metersPerDegLon = 111320 * Math.cos(ll.lat * Math.PI / 180);
           
-          const lat2 = ll.lat + (v.v * dt) / metersPerDegLat;
-          const lon2 = ll.lon + (v.u * dt) / metersPerDegLon;
+          const jitter = 0.02; // tune small
+          const lat2 = ll.lat + (v.v * dt) / metersPerDegLat + (Math.random() - 0.5) * jitter;
+          const lon2 = ll.lon + (v.u * dt) / metersPerDegLon + (Math.random() - 0.5) * jitter;
           
           // Draw using projection only at render time
           const p1 = this._latLngToCanvasPoint(p.lat, p.lon);
