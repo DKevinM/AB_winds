@@ -327,7 +327,7 @@
         ctx.globalCompositeOperation = "source-over";
 
         const zoom = this._map.getZoom();
-        ctx.lineWidth = Math.max(0.8, Math.min(2.2, zoom * 0.25));
+        ctx.lineWidth = Math.max(1.2, Math.min(2.6, zoom * 0.3));
         ctx.beginPath();
       
         for (const p of this._particles) {
@@ -358,7 +358,7 @@
           const p2 = this._latLngToCanvasPoint(lat2, lon2);
 
           const c = Math.min(255, Math.round(v.speed * 18));
-          ctx.strokeStyle = `rgba(${Math.max(120, c)}, ${Math.max(80, 220-c)}, 255, 1.0)`;
+          ctx.strokeStyle = `rgba(${Math.max(140, c)}, ${Math.max(100, 220-c)}, 255, 1.0)`;
           ctx.shadowColor = ctx.strokeStyle;
           ctx.shadowBlur = v.speed > 8 ? 4 : 0;
 
@@ -388,7 +388,7 @@
 
     const windLayer = new WindLayer();
     windLayer.addTo(map);
-   /* 
+
     fetch("data/Alberta.geojson")
       .then(r => r.json())
       .then(gj => {
@@ -405,7 +405,7 @@
     map.on("click", (e) => {
       if (!field) return;
     
-      const { lat, lng } = e.latlng;
+      const { lat, lng} = e.latlng;
       const wind = field.sample(lat, lng);
     
       if (!wind) {
@@ -434,9 +434,6 @@
         .setContent(html)
         .openOn(map);
     });
-
-*/
-
 
 
     
