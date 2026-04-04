@@ -269,8 +269,8 @@
         const width = this._map.getSize().x;
       
         // scale with zoom
-        const density = Math.max(0.3, Math.min(1.2, (zoom - 3) / 6));
-        const count = Math.round(width * 0.6 * density);
+        const density = Math.max(0.5, Math.min(2.2, (zoom - 3) / 4));
+        const count = Math.round(width * 1.2 * density);
         this._particles = Array.from(
           { length: count },
           () => this._randomParticle()
@@ -331,7 +331,7 @@
         ctx.beginPath();
       
         for (const p of this._particles) {
-          if (p.age++ > 150) {
+          if (p.age++ > 220) {
             Object.assign(p, this._randomParticle());
             continue;
           }
