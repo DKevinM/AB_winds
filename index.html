@@ -480,8 +480,6 @@ async function loadWind() {
 
   const fileA = rows[0];
   const fileB = rows[1];
-  console.log("Loading wind file:", filePath);
-
 
   const fetchWind = async (filePath) => {
     const fileURL = `${SUPABASE_URL}/storage/v1/object/public/winds/${filePath}`;
