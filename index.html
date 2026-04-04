@@ -268,7 +268,7 @@
       
         // scale with zoom
         const density = Math.max(0.6, Math.min(2.5, (zoom - 2) / 3));
-        const count = Math.round(width * 2.5 * density);
+        const count = Math.min(4000, Math.round(width * 2.5 * density));
         this._particles = Array.from(
           { length: count },
           () => this._randomParticle()
@@ -320,16 +320,23 @@
 
         // Fade previous frame 
         ctx.globalCompositeOperation = "destination-in";
-        ctx.fillStyle = "rgba(0, 0, 0, 0.60)";
+        ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
         ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
         ctx.globalCompositeOperation = "source-over";
 
         const zoom = this._map.getZoom();
         ctx.lineWidth = Math.max(1.8, Math.min(3.5, zoom * 0.4));
         ctx.beginPath();
-      
+
+
+        ctx.beginPath();
+        // inject new particles every frame (keeps map alive)
+        for (let i = 0; i < 50; i++) {
+          this._particles[Math.floor(Math.random() * this._particles.length)] = this._randomParticle();
+        }
+        
         for (const p of this._particles) {
-          if (p.age++ > 500) {
+          if (p.age++ > 250) {
             Object.assign(p, this._randomParticle());
             continue;
           }
@@ -344,7 +351,7 @@
           
           const TIME_SCALE = Math.max(1.5, Math.min(5, (zoom - 2) * 0.8));
           
-          const dt = 1100 * TIME_SCALE;
+          const dt = 1600 * TIME_SCALE;
           const metersPerDegLat = 111320;
           const metersPerDegLon = 111320 * Math.cos(ll.lat * Math.PI / 180);
           
