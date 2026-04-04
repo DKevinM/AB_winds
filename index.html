@@ -318,19 +318,14 @@
         const now = Date.now();
         const ctx = this._ctx;
         
-        // full reset every ~8 seconds (tune this)
-        if (now - this._lastReset > 8000) {
-          this._initParticles();          // new particles
-          this._ctx.clearRect(0, 0, this._canvas.width, this._canvas.height); // wipe trails
-          this._lastReset = now;
-        }        
+      
         
       
         ctx.save();
 
         // Fade previous frame 
         ctx.globalCompositeOperation = "destination-in";
-        ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+        ctx.fillStyle = "rgba(0, 0, 0, 0.50)";
         ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
         ctx.globalCompositeOperation = "source-over";
 
@@ -341,12 +336,14 @@
 
         ctx.beginPath();
         // inject new particles every frame (keeps map alive)
-        for (let i = 0; i < 50; i++) {
-          this._particles[Math.floor(Math.random() * this._particles.length)] = this._randomParticle();
+        for (let i = 0; i < this._particles.length; i++) {
+          if (Math.random() < 0.015) {
+            this._particles[i] = this._randomParticle();
+          }
         }
         
         for (const p of this._particles) {
-          if (p.age++ > 250) {
+          if (p.age++ > 180) {
             Object.assign(p, this._randomParticle());
             continue;
           }
@@ -365,7 +362,7 @@
           const metersPerDegLat = 111320;
           const metersPerDegLon = 111320 * Math.cos(ll.lat * Math.PI / 180);
           
-          const jitter = 0.0003 + v.speed * 0.0001;
+          const jitter = 0.0002 + v.speed * 0.00005;
           const lat2 = ll.lat + (v.v * dt) / metersPerDegLat + (Math.random() - 0.5) * jitter;
           const lon2 = ll.lon + (v.u * dt) / metersPerDegLon + (Math.random() - 0.5) * jitter;
           
