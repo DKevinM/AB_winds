@@ -153,6 +153,7 @@
         this._canvas = L.DomUtil.create("canvas", "wind");
         this._canvas.classList.add("wind");
         this._ctx = this._canvas.getContext("2d");
+        this._lastReset = Date.now();
         this._canvas.width = window.innerWidth;
         this._canvas.height = window.innerHeight;
         
@@ -312,7 +313,11 @@
       },
     
       _step: function () {
-        this._lastReset = Date.now();
+        if (!this._field || !this._particles) return;
+        
+        const now = Date.now();
+        const ctx = this._ctx;
+        
         // full reset every ~8 seconds (tune this)
         if (now - this._lastReset > 8000) {
           this._initParticles();          // new particles
@@ -320,9 +325,6 @@
           this._lastReset = now;
         }        
         
-        if (!this._field || !this._particles) return;
-      
-        const ctx = this._ctx;
       
         ctx.save();
 
