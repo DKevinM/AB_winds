@@ -549,17 +549,13 @@ async function loadWind() {
   const fieldB = makeField(dataB);  
 
 
-  setInterval(() => {
-    blendAlpha += 0.005;
-    if (blendAlpha > 1) blendAlpha = 0;
-  }, 100);
+  let blendAlpha = 0;
   
   field = {
     sample: (lat, lon) => {
       const a = fieldA.sample(lat, lon);
       const b = fieldB.sample(lat, lon);
-      
-      // fallback logic
+  
       if (!a && !b) return null;
       if (!a) return b;
       if (!b) return a;
@@ -570,21 +566,19 @@ async function loadWind() {
       return {
         u,
         v,
-        speed: Math.sqrt(u*u + v*v)
+        speed: Math.sqrt(u * u + v * v)
       };
     },
-
+  
     lon0: dataA.grid.lo1,
     lat0: dataA.grid.la1,
     dx: dataA.grid.dx,
     dy: dataA.grid.dy,
     nx: dataA.grid.nx,
-    ny: dataA.grid.ny,    
-
+    ny: dataA.grid.ny,
     modelTime: dataA.meta?.run || null
   };
   
-
   setInterval(() => {
     blendAlpha += 0.005;
     if (blendAlpha > 1) blendAlpha = 0;
@@ -621,43 +615,6 @@ async function loadWind() {
   info.textContent = "Wind loaded (particles running)";
   return field;
 }   
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
