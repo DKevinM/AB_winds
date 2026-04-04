@@ -270,7 +270,7 @@
       
         // scale with zoom
         const density = Math.max(0.5, Math.min(2.2, (zoom - 3) / 4));
-        const count = Math.round(width * 2.0 * density);
+        const count = Math.round(width * 3.0 * density);
         this._particles = Array.from(
           { length: count },
           () => this._randomParticle()
@@ -322,16 +322,16 @@
 
         // Fade previous frame 
         ctx.globalCompositeOperation = "destination-in";
-        ctx.fillStyle = "rgba(0, 0, 0, 0.80)";
+        ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
         ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
         ctx.globalCompositeOperation = "source-over";
 
         const zoom = this._map.getZoom();
-        ctx.lineWidth = Math.max(1.4, Math.min(3.0, zoom * 0.35));
+        ctx.lineWidth = Math.max(1.6, Math.min(3.2, zoom * 0.35));
         ctx.beginPath();
       
         for (const p of this._particles) {
-          if (p.age++ > 300) {
+          if (p.age++ > 500) {
             Object.assign(p, this._randomParticle());
             continue;
           }
@@ -365,7 +365,11 @@
 
           ctx.moveTo(p1.x, p1.y);
           ctx.lineTo(p2.x, p2.y);
-          ctx.lineTo(p2.x + 0.2, p2.y + 0.2);
+          // extend line slightly forward (visual density boost)
+          ctx.lineTo(
+            p2.x + (p2.x - p1.x) * 0.3,
+            p2.y + (p2.y - p1.y) * 0.3
+          );
           
           // Update particle in geographic space
           p.lat = lat2;
