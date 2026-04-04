@@ -205,9 +205,17 @@
       
         this._canvas.width = size.x;
         this._canvas.height = size.y;
-      
-        this._ctx.clearRect(0, 0, size.x, size.y);
-      
+
+        
+        const ctx = this._ctx;
+        const w = this._canvas.width;
+        const h = this._canvas.height;
+        
+        // HARD CLEAR (debug mode)
+        ctx.globalCompositeOperation = "source-over";
+        ctx.clearRect(0, 0, w, h);
+
+        
         if (!this._particles && this._field) this._initParticles();
         if (this._maskGeoJSON) this._updateMaskPath();
       },
@@ -263,9 +271,17 @@
 
       
       _initParticles: function() {
-        const count = Math.round(this._map.getSize().x * 0.8);
-        this._particles = Array.from({ length: count }, () => this._randomParticle());
-      },
+        const zoom = this._map.getZoom();
+        const width = this._map.getSize().x;
+      
+        // scale with zoom
+        const density = Math.max(0.3, Math.min(1.2, (zoom - 3) / 6));
+        const count = Math.round(width * 0.6 * density);
+        this._particles = Array.from(
+          { length: count },
+          () => this._randomParticle()
+        );
+      }
     
       _randomParticle: function() {
         const f = this._field;
@@ -310,16 +326,14 @@
       
         ctx.save();
 
-        // Fade trails by removing alpha (not painting black)
-        // ctx.globalCompositeOperation = "destination-out";
-        // ctx.fillStyle = "rgba(0,0,0,0.05)";
-        // ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
-        // ctx.globalCompositeOperation = "source-over";
-        
-        // Apply Alberta mask
-        // if (this._maskPath) ctx.clip(this._maskPath, "evenodd");
+        // Fade previous frame 
+        ctx.globalCompositeOperation = "destination-in";
+        ctx.fillStyle = "rgba(0, 0, 0, 0.95)";
+        ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
+        ctx.globalCompositeOperation = "source-over";
 
-        ctx.lineWidth = 1.6;
+        const zoom = this._map.getZoom();
+        ctx.lineWidth = Math.max(0.8, Math.min(2.2, zoom * 0.25));
         ctx.beginPath();
       
         for (const p of this._particles) {
@@ -337,7 +351,10 @@
             continue;
           }
           
-          const TIME_SCALE = 3.5; 
+          const zoom = this._map.getZoom();
+          // slow down when zoomed out, speed up when zoomed in
+          const TIME_SCALE = Math.max(1.5, Math.min(5, (zoom - 2) * 0.8));
+          
           const dt = 1100 * TIME_SCALE;
           const metersPerDegLat = 111320;
           const metersPerDegLon = 111320 * Math.cos(ll.lat * Math.PI / 180);
@@ -352,7 +369,7 @@
           const c = Math.min(255, Math.round(v.speed * 18));
           ctx.strokeStyle = `rgba(${Math.max(80, c)}, ${Math.max(40, 200-c)}, 255, 0.95)`;
           ctx.shadowColor = ctx.strokeStyle;
-          ctx.shadowBlur = v.speed > 6 ? 6 : 2;
+          ctx.shadowBlur = v.speed > 8 ? 4 : 0;
 
 
           ctx.moveTo(p1.x, p1.y);
