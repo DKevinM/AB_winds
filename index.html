@@ -504,16 +504,43 @@ async function loadWind() {
       const uData = data.fields.ugrd10[0];
       const vData = data.fields.vgrd10[0];
     
+    
       const fx = (lon - lon0) / dx;
       const fy = (lat0 - lat) / dy;
-    
+      
       const i = Math.floor(fx);
       const j = Math.floor(fy);
-    
-      if (j < 0 || j >= ny || i < 0 || i >= nx) return null;
-    
-      const u = uData[j][i];
-      const v = vData[j][i];
+      
+      const di = fx - i;
+      const dj = fy - j;
+      
+      // need one extra cell for interpolation
+      if (j < 0 || j >= ny - 1 || i < 0 || i >= nx - 1) return null;
+      
+      const u00 = uData[j][i];
+      const u10 = uData[j][i + 1];
+      const u01 = uData[j + 1][i];
+      const u11 = uData[j + 1][i + 1];
+      
+      const v00 = vData[j][i];
+      const v10 = vData[j][i + 1];
+      const v01 = vData[j + 1][i];
+      const v11 = vData[j + 1][i + 1];
+      
+      // bilinear interpolation
+      const u =
+        u00 * (1 - di) * (1 - dj) +
+        u10 * di * (1 - dj) +
+        u01 * (1 - di) * dj +
+        u11 * di * dj;
+      
+      const v =
+        v00 * (1 - di) * (1 - dj) +
+        v10 * di * (1 - dj) +
+        v01 * (1 - di) * dj +
+        v11 * di * dj;
+      
+     
     
       if (!isFinite(u) || !isFinite(v)) return null;
     
