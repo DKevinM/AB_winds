@@ -330,12 +330,8 @@
         ctx.globalCompositeOperation = "source-over";
 
         const zoom = this._map.getZoom();
-        const baseWidth = Math.max(1.5, Math.min(4, speed * 0.4));
-        ctx.lineWidth = speed < 2 ? baseWidth + 0.8 : baseWidth;
         ctx.beginPath();
 
-
-        ctx.beginPath();
         // inject new particles every frame (keeps map alive)
         for (let i = 0; i < this._particles.length; i++) {
           if (Math.random() < 0.02) {
@@ -363,7 +359,7 @@
           const metersPerDegLat = 111320;
           const metersPerDegLon = 111320 * Math.cos(ll.lat * Math.PI / 180);
           
-          const jitter = 0.0002 + v.speed * 0.00005;
+          const jitter = 0.00005;
           const lat2 = ll.lat + (v.v * dt) / metersPerDegLat + (Math.random() - 0.5) * jitter;
           const lon2 = ll.lon + (v.u * dt) / metersPerDegLon + (Math.random() - 0.5) * jitter;
           
@@ -494,9 +490,9 @@ async function loadWind() {
 
   
 
-  const makeField = (data) => ({
+  const makeField = (dataA) => ({
     sample: (lat, lon) => {
-      const grid = data.grid;
+      const grid = dataA.grid;
   
       const nx = grid.nx;
       const ny = grid.ny;
@@ -505,8 +501,8 @@ async function loadWind() {
       const dx = grid.dx;
       const dy = grid.dy;
   
-      const uData = data.fields.ugrd10[0];
-      const vData = data.fields.vgrd10[0];
+      const udataA = dataA.fields.ugrd10[0];
+      const vdataA = dataA.fields.vgrd10[0];
   
       const fx = (lon - lon0) / dx;
       const fy = (lat0 - lat) / dy;
@@ -520,16 +516,16 @@ async function loadWind() {
       if (j < 0 || j >= ny - 1 || i < 0 || i >= nx - 1) return null;
   
       const u =
-        uData[j][i] * (1 - di) * (1 - dj) +
-        uData[j][i+1] * di * (1 - dj) +
-        uData[j+1][i] * (1 - di) * dj +
-        uData[j+1][i+1] * di * dj;
+        udataA[j][i] * (1 - di) * (1 - dj) +
+        udataA[j][i+1] * di * (1 - dj) +
+        udataA[j+1][i] * (1 - di) * dj +
+        udataA[j+1][i+1] * di * dj;
   
       const v =
-        vData[j][i] * (1 - di) * (1 - dj) +
-        vData[j][i+1] * di * (1 - dj) +
-        vData[j+1][i] * (1 - di) * dj +
-        vData[j+1][i+1] * di * dj;
+        vdataA[j][i] * (1 - di) * (1 - dj) +
+        vdataA[j][i+1] * di * (1 - dj) +
+        vdataA[j+1][i] * (1 - di) * dj +
+        vdataA[j+1][i+1] * di * dj;
   
       if (!isFinite(u) || !isFinite(v)) return null;
   
@@ -564,34 +560,35 @@ async function loadWind() {
   
 
   setInterval(() => {
-    blendAlpha += 0.02;
+    blendAlpha += 0.005;
     if (blendAlpha > 1) blendAlpha = 0;
   }, 100);
-  
-  
 
-  if (field.modelTime) {
+  
+  
+  if (dataA.meta?.run) {
     windTime.baseUTC = new Date(
-      field.modelTime.endsWith("Z")
-        ? field.modelTime
-        : field.modelTime + "Z"
+      dataA.meta.run.endsWith("Z")
+        ? dataA.meta.run
+        : dataA.meta.run + "Z"
     );
   } else {
     windTime.baseUTC = null;
   }
 
-  const midLat = data.grid.la1 - (data.grid.dy * data.grid.ny / 2);
-  const midLon = data.grid.lo1 + (data.grid.dx * data.grid.nx / 2);
+  
+  const midLat = dataA.grid.la1 - (dataA.grid.dy * dataA.grid.ny / 2);
+  const midLon = dataA.grid.lo1 + (dataA.grid.dx * dataA.grid.nx / 2);
   
   const test = field.sample(midLat, midLon);
   console.log("MID GRID TEST:", test);
 
   
   console.log("GRID BOUNDS:", {
-    latMax: data.grid.la1,
-    latMin: data.grid.la1 - data.grid.dy * (data.grid.ny - 1),
-    lonMin: data.grid.lo1,
-    lonMax: data.grid.lo1 + data.grid.dx * (data.grid.nx - 1)
+    latMax: dataA.grid.la1,
+    latMin: dataA.grid.la1 - dataA.grid.dy * (dataA.grid.ny - 1),
+    lonMin: dataA.grid.lo1,
+    lonMax: dataA.grid.lo1 + dataA.grid.dx * (dataA.grid.nx - 1)
   });
   
   
