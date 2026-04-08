@@ -190,27 +190,27 @@ async function runModel() {
   document.getElementById("status").innerText =
     "Triggering Python model (15–20 min)...";
 
-  const res = await fetch(
-    "https://lingering-sun-ff8a.drkevmcc.workers.dev",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        lat: selectedPoint.lat,
-        lon: selectedPoint.lng,
-        time: time,
-        hours: hours
-      })
-    }
-  );
-
-  if (!res.ok) {
-    document.getElementById("status").innerText =
-      "Error triggering model";
-    return;
+const res = await fetch(
+  "https://lingering-sun-ff8a.drkevmcc.workers.dev",
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      lat: selectedPoint.lat,
+      lon: selectedPoint.lng,
+      time: time,
+      hours: hours
+    })
   }
+);
 
-  startPolling();
+const txt = await res.text();
+console.log("API RESPONSE:", txt);
+
+document.getElementById("status").innerText =
+  "Response: " + txt;
+
+startPolling();
 }
 
 </script>
