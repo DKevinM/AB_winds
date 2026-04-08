@@ -7,13 +7,7 @@
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <script src="odour/data.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
-  <script src="js/wind_fetch.js"></script>
-  <script src="js/trajectory.js"></script>
-
-  
 
   <style>
     body { margin: 0; font-family: Arial; background: #111; color: #eee; }
@@ -29,10 +23,8 @@
       padding: 6px;
       font-size: 14px;
     }
-    button { cursor: pointer; }
   </style>
 </head>
-
 
 <body>
 
@@ -47,386 +39,137 @@
 </div>
 
 <div id="map"></div>
-  
 
-async function loadBacktrajResults() {
-  const base = "https://dkevinm.github.io/AB_winds/odour_data/";
-
-  const [center, cloud, density] = await Promise.all([
-    fetch(base + "backtraj_centerlines.geojson").then(r => r.json()),
-    fetch(base + "backtraj_cloud.geojson").then(r => r.json()),
-    fetch(base + "backtraj_density.geojson").then(r => r.json())
-  ]);
-
-  drawResults(center, cloud, density);
-}	
-
-function drawResults(center, cloud, density) {
-
-  centerlineLayer.clearLayers();
-  cloudLayer.clearLayers();
-  densityLayer.clearLayers();
-
-  // centerline
-  L.geoJSON(center, {
-    color: "#00ffff",
-    weight: 3
-  }).addTo(centerlineLayer);
-
-  // cloud
-  L.geoJSON(cloud, {
-    pointToLayer: (f, latlng) =>
-      L.circleMarker(latlng, {
-        radius: 2,
-        color: "#7fcdbb",
-        fillOpacity: 0.3
-      })
-  }).addTo(cloudLayer);
-
-  // density
-  L.geoJSON(density, {
-    style: f => ({
-      color: "#ff7f00",
-      fillOpacity: Math.min(0.6, f.properties.count / 50)
-    })
-  }).addTo(densityLayer);
-}
-	
-
-async function runModel() {
-  document.getElementById("status").innerText = "Loading trajectory...";
-  await loadBacktrajResults();
-  document.getElementById("status").innerText = "Done";
-}
-
-	
-	
 <script>
-let lastModifiedSeen = null;
 
 let selectedPoint = null;
 let trajectoryPoll = null;
-let trajectoryLayersAdded = false;
+let modelStartTime = null;
 
-const markerGroup = L.layerGroup();
-const paLayer     = L.layerGroup();
-const npriLayerGroup = L.layerGroup();
-const NPRI_URL = "https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data/NPRI.geojson";
+// MAP SETUP
 const map = L.map('map').setView([53.54, -113.49], 7);
-const layerRegistry = {};
-  
-const centerlineLayer = L.layerGroup().addTo(map);
-const cloudLayer = L.layerGroup().addTo(map);
-const densityLayer = L.layerGroup().addTo(map);  
 
-
-layerRegistry["Stations"]          = markerGroup;
-layerRegistry["Sensors (PurpleAir)"] = paLayer;  
-
-  // ---------------------------------------------
-  // AQHI colour function (for categories 1..10+)
-  // ---------------------------------------------
-  function getColor(aqhi) {
-    const lut = {
-      "1":  "#01cbff",
-      "2":  "#0099cb",
-      "3":  "#016797",
-      "4":  "#fffe03",
-      "5":  "#ffcb00",
-      "6":  "#ff9835",
-      "7":  "#fd6866",
-      "8":  "#fe0002",
-      "9":  "#cc0001",
-      "10": "#9a0100",
-      "10+": "#640100"
-    };
-    return lut[String(aqhi)] || "#D3D3D3";
-  }
-
-  
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
-  
-const overlayControl = L.control.layers(null, {
-  "Stations": markerGroup,
-  "PurpleAir": paLayer,
-  "NPRI Facilities": npriLayerGroup
-}, { collapsed: false }).addTo(map);
+// LAYERS
+const centerlineLayer = L.layerGroup().addTo(map);
+const cloudLayer = L.layerGroup().addTo(map);
+const densityLayer = L.layerGroup().addTo(map);
 
-// -------------------------------
-// Trajectory layers (created once)
-// -------------------------------
-overlayControl.addOverlay(centerlineLayer, "Trajectory Trend");
-overlayControl.addOverlay(cloudLayer, "Particle Cloud");
-overlayControl.addOverlay(densityLayer, "Potential Influence");
-  
-  
-fetch(NPRI_URL)
-  .then(res => res.json())
-  .then(fc => {
-    window.NPRI_FC = fc;
-    plotNPRI(fc);
-    npriLayerGroup.addTo(map);   // default on
-  })
-  .catch(err => console.error("NPRI load failed:", err));
-  
-function getFeatureLatLon(src) {
-  const g = src.geometry || {};
-
-  if (g.type === "Point") {
-    return { lat: g.coordinates[1], lon: g.coordinates[0] };
-  }
-
-  const p = src.properties || {};
-  const lat = Number(p.lat ?? p.Latitude ?? p.latitude);
-  const lon = Number(p.lon ?? p.Longitude ?? p.longitude);
-
-  if (isFinite(lat) && isFinite(lon)) return { lat, lon };
-  return null;
-}
-
-
-// PurpleAir eAQHI layer
-const PURPLE_URL = "https://raw.githubusercontent.com/DKevinM/AB_datapull/main/data/AB_PM25_map.json";
-
-// eAQHI = floor(pm_corr / 10) + 1, capped to 0–10
-function computeEAQHI(pm) {
-  if (pm == null || isNaN(pm)) return null;
-  let val = Math.floor(pm / 10) + 1;
-  if (val < 0) val = 0;
-  if (val > 10) val = 10;
-  return val;
-}
-
-fetch(PURPLE_URL)
-  .then(res => res.json())
-  .then(data => {
-    // handle either array or { data: [...] }
-    const records = Array.isArray(data)
-      ? data
-      : (Array.isArray(data.data) ? data.data : []);
-
-    records.forEach(rec => {
-      const lat = parseFloat(rec.lat ?? rec.Latitude ?? rec.latitude);
-      const lon = parseFloat(rec.lon ?? rec.Longitude ?? rec.longitude);
-      const pm  = parseFloat(rec.pm_corr);
-
-      if (!isFinite(lat) || !isFinite(lon) || !isFinite(pm)) return;
-
-      const eAQHI = computeEAQHI(pm);
-      if (eAQHI === null) return;
-
-      // pull out sensor index (with a couple of fallbacks just in case)
-      const sensorIndex = rec.sensor_index;
-      
-      const label = rec.name || (sensorIndex != null
-        ? `Sensor ${sensorIndex}`
-        : "Unnamed sensor");
-      const color = getColor(String(eAQHI));
-
-      const days = Number(new URLSearchParams(location.search).get("days")) || 7;
-      
-      const marker = L.circleMarker([lat, lon], {
-        radius: 4,                 // ~50% smaller than stations (7)
-        fillColor: color,
-        color: "#222",
-        weight: 0.5,
-        fillOpacity: 0.85
-      }).bindPopup(
-        `<strong>PurpleAir</strong><br>` +
-        `${label}<br>` +
-         (sensorIndex != null ? `Sensor index: ${sensorIndex}<br>` : "") +
-        `eAQHI: ${eAQHI}<br>` +
-        `PM₂.₅ (corr): ${pm.toFixed(1)} µg/m³` +
-        `<hr>` +
-        `<a href="/AQHI.forecast/history/sensor_compare.html?sensor_index=${sensorIndex}"
-           target="_blank">
-           View historical PM2.5
-        </a>`          
-      );
-
-      marker.addTo(paLayer);
-    });
-
-    // Turn on PurpleAir by default (optional)
-    paLayer.addTo(map);
-  })
-  .catch(err => {
-    console.error("Error loading PurpleAir data:", err);
-  });
-
-
-let aerLayer = null;
-  
-map.on("zoomend", () => {
-  const z = map.getZoom();
-  if (!aerLayer) return;   // ← prevents crash if file not loaded yet
-  if (z >= 11) {
-    if (!map.hasLayer(aerLayer)) {
-      map.addLayer(aerLayer);
-    }
-  } else {
-    if (map.hasLayer(aerLayer)) {
-      map.removeLayer(aerLayer);
-    }
-  }
-});
-
-
-  
-  
+// CLICK LOCATION
 let marker;
-
 map.on('click', e => {
   selectedPoint = e.latlng;
   if (marker) map.removeLayer(marker);
   marker = L.marker(e.latlng).addTo(map);
 });
 
-markerGroup.addTo(map);
-paLayer.addTo(map);
-  
+// ----------------------------
+// CHECK FOR NEW OUTPUT
+// ----------------------------
+async function checkForNewOutput() {
+  try {
+    const res = await fetch(
+      "odour_data/backtraj_centerlines.geojson?t=" + Date.now(),
+      { method: "HEAD" }
+    );
 
+    if (!res.ok) return false;
 
-function plotNPRI(fc) {
-  npriLayerGroup.clearLayers();
-  if (!fc || !Array.isArray(fc.features)) return;
+    const lastModified = res.headers.get("Last-Modified");
+    if (!lastModified) return false;
 
-  fc.features.forEach(f => {
-    const ll = getFeatureLatLon(f);
-    if (!ll) return;
+    const fileTime = new Date(lastModified).getTime();
 
-    const p   = f.properties || {};
-    const fac = p.FACILITY_NAME || p.FacilityName || "Facility";
-    const co  = p.COMPANY_NAME  || p.Company      || "";
-    const yr  = p.REPORTING_YEAR || p.ReportingYear || "";
-    const label = co ? `${fac} (${co})` : fac;
+    return fileTime > modelStartTime;
 
-    L.circleMarker([ll.lat, ll.lon], {
-      radius: 4,
-      color: "#cc0000",
-      weight: 1,
-      fillOpacity: 0.8
-    })
-      .bindPopup(`
-        <b>${label}</b><br>
-        ${yr ? "Year: " + yr + "<br>" : ""}
-        <small>${ll.lat.toFixed(4)}, ${ll.lon.toFixed(4)}</small>
-      `)
-      .addTo(npriLayerGroup);
-  });
-
-  console.log("[odour] plotted NPRI:", fc.features.length);
+  } catch {
+    return false;
+  }
 }
 
+// ----------------------------
+// LOAD TRAJECTORIES
+// ----------------------------
+async function loadTrajectories() {
 
+  const [centerRes, cloudRes, densityRes] = await Promise.all([
+    fetch("odour_data/backtraj_centerlines.geojson?t=" + Date.now()),
+    fetch("odour_data/backtraj_cloud.geojson?t=" + Date.now()),
+    fetch("odour_data/backtraj_density.geojson?t=" + Date.now())
+  ]);
 
-function buildFootprint(trajectories, dlat = 0.02, dlon = 0.02) {
-  const counts = new Map();
+  if (!centerRes.ok || !cloudRes.ok || !densityRes.ok) return false;
 
-  trajectories.forEach(traj => {
-    if (!Array.isArray(traj) || !traj.length) return;
+  const centerGeo = await centerRes.json();
+  const cloudGeo = await cloudRes.json();
+  const densityGeo = await densityRes.json();
 
-    traj.forEach((pt, i) => {
-      if (i < 2) return;
-
-      const key = `${Math.round(pt.lat / dlat)},${Math.round(pt.lon / dlon)}`;
-      const weight = 1 / (i + 1);
-      counts.set(key, (counts.get(key) || 0) + weight);
-    });
-  });
-
-  return Array.from(counts.entries()).map(([key, count]) => {
-    const [iy, ix] = key.split(",").map(Number);
-    return { lat: iy * dlat, lon: ix * dlon, count };
-  });
-}
-
-function drawParticleCloud(trajectories) {
+  centerlineLayer.clearLayers();
   cloudLayer.clearLayers();
-
-  if (!Array.isArray(trajectories) || !trajectories.length) return;
-
-  trajectories.forEach(traj => {
-    traj.forEach((pt, i) => {
-      if (i === 0) return;
-
-      L.circleMarker([pt.lat, pt.lon], {
-        radius: 3.5,
-        color: "#7fcdbb",
-        weight: 0.5,
-        fillColor: "#7fcdbb",
-        fillOpacity: 0.6
-      }).addTo(cloudLayer);
-    });
-  });
-}
-
-function drawPotentialInfluence(cells, dlat = 0.02, dlon = 0.02) {
   densityLayer.clearLayers();
 
-  if (!Array.isArray(cells) || !cells.length) return;
+  // CENTERLINE
+  L.geoJSON(centerGeo, {
+    style: { color: "#00ffff", weight: 2 }
+  }).addTo(centerlineLayer);
 
-  const maxCount = Math.max(...cells.map(c => c.count));
+  // CLOUD
+  L.geoJSON(cloudGeo, {
+    pointToLayer: (f, latlng) =>
+      L.circleMarker(latlng, {
+        radius: 3,
+        fillColor: "#7fcdbb",
+        color: "#111",
+        weight: 0.5,
+        fillOpacity: 0.6
+      })
+  }).addTo(cloudLayer);
 
-  cells.forEach(cell => {
-    const intensity = maxCount > 0 ? (cell.count / maxCount) : 0;
-    const bounds = [
-      [cell.lat - dlat / 2, cell.lon - dlon / 2],
-      [cell.lat + dlat / 2, cell.lon + dlon / 2]
-    ];
-
-    L.rectangle(bounds, {
-      weight: 0,
-      color: "#ff7f00",
+  // DENSITY
+  L.geoJSON(densityGeo, {
+    style: f => ({
+      color: "#333",
+      weight: 0.3,
       fillColor: "#ff7f00",
-      fillOpacity: 0.12 + intensity * 0.45
+      fillOpacity: Math.min(0.6, (f.properties.count || 0) / 50)
     })
-    .bindTooltip(`Potential influence: ${(intensity * 100).toFixed(1)}%`, { sticky: true })
-    .addTo(densityLayer);
-  });
+  }).addTo(densityLayer);
+
+  return true;
 }
 
-function computeEnsembleTrajectories(startLat, startLon, winds, nParticles = 40) {
-  const trajectories = [];
-  const spread = 0.01;
+// ----------------------------
+// START POLLING
+// ----------------------------
+function startPolling() {
 
-  for (let p = 0; p < nParticles; p++) {
-    const lat0 = startLat + (Math.random() - 0.5) * spread;
-    const lon0 = startLon + (Math.random() - 0.5) * spread;
+  if (trajectoryPoll) clearInterval(trajectoryPoll);
 
-    const path = computeBackTrajectory(lat0, lon0, winds).map(([lat, lon]) => ({ lat, lon }));
-    trajectories.push(path);
-  }
+  document.getElementById("status").innerText =
+    "Model running — checking every 2 minutes...";
 
-  return trajectories;
+  trajectoryPoll = setInterval(async () => {
+
+    const ready = await checkForNewOutput();
+
+    if (ready) {
+      clearInterval(trajectoryPoll);
+
+      await loadTrajectories();
+
+      document.getElementById("status").innerText =
+        "Trajectory loaded";
+    }
+
+  }, 120000);
 }
 
-
-
-  
-
-  window.dataReady.then(() => {
-    fetchAllStationData().then(allStations => {
-      allStations.forEach(({ stationName, lat, lon, html, aqhi }) => {
-        const fillColor = getColor(String(aqhi || "NA"));
-  
-        const marker = L.circleMarker([lat, lon], {
-          radius: 7,
-          fillColor: fillColor,
-          color: "#222",
-          weight: 1,
-          fillOpacity: 0.85
-        }).bindPopup(html);
-  
-        marker.addTo(markerGroup);
-      });
-    });
-  });
-
-  
+// ----------------------------
+// RUN MODEL (KEY FUNCTION)
+// ----------------------------
 async function runModel() {
 
   if (!selectedPoint) {
@@ -435,95 +178,42 @@ async function runModel() {
   }
 
   const time = document.getElementById("time").value;
-  const hours = parseInt(document.getElementById("hours").value);
+  const hours = document.getElementById("hours").value;
 
   if (!time) {
     alert("Enter a UTC time.");
     return;
   }
 
-  document.getElementById("status").innerText = "Fetching wind data...";
+  modelStartTime = Date.now();
 
-  const winds = [];
+  document.getElementById("status").innerText =
+    "Triggering Python model (15–20 min)...";
 
-  // Build time steps (backwards)
-  let baseTime = new Date(time);
-
-  for (let i = 0; i < hours; i++) {
-    const tISO = baseTime.toISOString();
-
-    const file = await findClosestWindFile(tISO);
-
-   if (!file?.file_path) {
-      console.warn("No wind file found for", tISO);
-      baseTime.setUTCHours(baseTime.getUTCHours() - 1);
-      continue;
+  const res = await fetch(
+    "https://lingering-sun-ff8a.drkevmcc.workers.dev",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lat: selectedPoint.lat,
+        lon: selectedPoint.lng,
+        time: time,
+        hours: hours
+      })
     }
-    
-    const data = await fetchWindFile(file.file_path);
-    if (!data?.grid || !data?.fields) {
-      console.warn("Wind file could not be decoded", file.file_path);
+  );
 
-      baseTime.setUTCHours(baseTime.getUTCHours() - 1);
-      continue;
-    }
-      
-    const w = extractWindAtPoint(data, selectedPoint.lat, selectedPoint.lng);
-	if (w && isFinite(w.ws) && isFinite(w.wd)) {
-	
-	  const subSteps = 4; // 4 = 15 min, 6 = 10 min
-	  const dt = 1 / subSteps;
-	
-	  for (let s = 0; s < subSteps; s++) {
-	    winds.push({
-	      ...w,
-	      hours: dt
-	    });
-	  }
-	}
-
-
-    baseTime.setUTCHours(baseTime.getUTCHours() - 1);
-  }
-  
-  if (!winds.length) {
-    document.getElementById("status").innerText = "No wind data found";
+  if (!res.ok) {
+    document.getElementById("status").innerText =
+      "Error triggering model";
     return;
   }
 
-  document.getElementById("status").innerText = "Computing trajectory...";
-
-
-  const centerlinePoints = computeBackTrajectory(selectedPoint.lat, selectedPoint.lng, winds);
-  const centerlineGeo = trajectoryToGeoJSON(centerlinePoints, { hours });
-
-  const ensemble = computeEnsembleTrajectories(selectedPoint.lat, selectedPoint.lng, winds, 40);
-  const footprint = buildFootprint(ensemble, 0.005, 0.005);
-					 
-  centerlineLayer.clearLayers();
-  cloudLayer.clearLayers();
-  densityLayer.clearLayers();
-
-  
-
-  L.geoJSON(centerlineGeo, {
-     color: "#00ffff",
-     weight: 3
-  }).addTo(centerlineLayer);
-
-  drawParticleCloud(ensemble);
-  drawPotentialInfluence(footprint, 0.005, 0.005);
-
-  const windSummary = winds[0]
-    ? `${winds[0].wd.toFixed(0)}° at ${winds[0].ws.toFixed(1)} m/s`
-    : "N/A";
-
-  document.getElementById("status").innerText = `Trajectory complete — ${ensemble.length} particles, ${footprint.length} influence cells, first step ${windSummary}`;
+  startPolling();
 }
 
- 
 </script>
 
-  
 </body>
 </html>
