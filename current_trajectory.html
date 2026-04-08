@@ -774,6 +774,10 @@
 
 
     function isWithinUpwindSector(receptor, point, windFromDeg, toleranceDeg = 45) {
+      // Compare receptor -> source bearing to the meteorological wind-from direction.
+      // If wind is FROM the south (180°), truly upwind facilities should sit south of
+      // the receptor, so the bearing from receptor to facility should also be ~180°.
+      const b = bearingDeg(receptor.lat, receptor.lon, point.lat, point.lon);      
       const b = bearingDeg(point.lat, point.lon, receptor.lat, receptor.lon);
       const diff = Math.abs(((b - windFromDeg + 540) % 360) - 180);
       return diff <= toleranceDeg;
