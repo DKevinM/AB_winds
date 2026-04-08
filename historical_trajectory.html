@@ -378,8 +378,6 @@ function computeEnsembleTrajectories(startLat, startLon, winds, nParticles = 40)
   });
 
   
-console.log("WIND STEPS:", winds.length, winds);
-  
 async function runModel() {
 
   if (!selectedPoint) {
@@ -455,7 +453,7 @@ async function runModel() {
   }).addTo(centerlineLayer);
 
   drawParticleCloud(ensemble);
-  drawPotentialInfluence(footprint, 0.02, 0.02);
+  drawPotentialInfluence(footprint, 0.005, 0.005);
 
   const windSummary = winds[0]
     ? `${winds[0].wd.toFixed(0)}° at ${winds[0].ws.toFixed(1)} m/s`
