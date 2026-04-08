@@ -420,9 +420,19 @@ async function runModel() {
     }
       
     const w = extractWindAtPoint(data, selectedPoint.lat, selectedPoint.lng);
-    if (w && isFinite(w.ws) && isFinite(w.wd)) {
-      winds.push({ ...w, hours: 1 });
-    }
+	if (w && isFinite(w.ws) && isFinite(w.wd)) {
+	
+	  const subSteps = 4; // 4 = 15 min, 6 = 10 min
+	  const dt = 1 / subSteps;
+	
+	  for (let s = 0; s < subSteps; s++) {
+	    winds.push({
+	      ...w,
+	      hours: dt
+	    });
+	  }
+	}
+
 
     baseTime.setUTCHours(baseTime.getUTCHours() - 1);
   }
