@@ -7,6 +7,7 @@
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <script src="odour/data.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
   <script src="js/wind_fetch.js"></script>
@@ -272,6 +273,92 @@ function plotNPRI(fc) {
 }
 
 
+
+function buildFootprint(trajectories, dlat = 0.02, dlon = 0.02) {
+  const counts = new Map();
+
+  trajectories.forEach(traj => {
+    if (!Array.isArray(traj) || !traj.length) return;
+
+    traj.forEach((pt, i) => {
+      if (i < 2) return;
+
+      const key = `${Math.round(pt.lat / dlat)},${Math.round(pt.lon / dlon)}`;
+      const weight = 1 / (i + 1);
+      counts.set(key, (counts.get(key) || 0) + weight);
+    });
+  });
+
+  return Array.from(counts.entries()).map(([key, count]) => {
+    const [iy, ix] = key.split(",").map(Number);
+    return { lat: iy * dlat, lon: ix * dlon, count };
+  });
+}
+
+function drawParticleCloud(trajectories) {
+  cloudLayer.clearLayers();
+
+  if (!Array.isArray(trajectories) || !trajectories.length) return;
+
+  trajectories.forEach(traj => {
+    traj.forEach((pt, i) => {
+      if (i === 0) return;
+
+      L.circleMarker([pt.lat, pt.lon], {
+        radius: 3.5,
+        color: "#7fcdbb",
+        weight: 0.5,
+        fillColor: "#7fcdbb",
+        fillOpacity: 0.6
+      }).addTo(cloudLayer);
+    });
+  });
+}
+
+function drawPotentialInfluence(cells, dlat = 0.02, dlon = 0.02) {
+  densityLayer.clearLayers();
+
+  if (!Array.isArray(cells) || !cells.length) return;
+
+  const maxCount = Math.max(...cells.map(c => c.count));
+
+  cells.forEach(cell => {
+    const intensity = maxCount > 0 ? (cell.count / maxCount) : 0;
+    const bounds = [
+      [cell.lat - dlat / 2, cell.lon - dlon / 2],
+      [cell.lat + dlat / 2, cell.lon + dlon / 2]
+    ];
+
+    L.rectangle(bounds, {
+      weight: 0,
+      color: "#ff7f00",
+      fillColor: "#ff7f00",
+      fillOpacity: 0.12 + intensity * 0.45
+    })
+    .bindTooltip(`Potential influence: ${(intensity * 100).toFixed(1)}%`, { sticky: true })
+    .addTo(densityLayer);
+  });
+}
+
+function computeEnsembleTrajectories(startLat, startLon, winds, nParticles = 40) {
+  const trajectories = [];
+  const spread = 0.01;
+
+  for (let p = 0; p < nParticles; p++) {
+    const lat0 = startLat + (Math.random() - 0.5) * spread;
+    const lon0 = startLon + (Math.random() - 0.5) * spread;
+
+    const path = computeBackTrajectory(lat0, lon0, winds).map(([lat, lon]) => ({ lat, lon }));
+    trajectories.push(path);
+  }
+
+  return trajectories;
+}
+
+
+
+  
+
   window.dataReady.then(() => {
     fetchAllStationData().then(allStations => {
       allStations.forEach(({ stationName, lat, lon, html, aqhi }) => {
@@ -290,6 +377,8 @@ function plotNPRI(fc) {
     });
   });
 
+  
+console.log("WIND STEPS:", winds.length, winds);
   
 async function runModel() {
 
@@ -314,26 +403,32 @@ async function runModel() {
   let baseTime = new Date(time);
 
   for (let i = 0; i < hours; i++) {
-
     const tISO = baseTime.toISOString();
 
     const file = await findClosestWindFile(tISO);
+
+   if (!file?.file_path) {
+      console.warn("No wind file found for", tISO);
+      baseTime.setUTCHours(baseTime.getUTCHours() - 1);
+      continue;
+    }
+    
     const data = await fetchWindFile(file.file_path);
+    if (!data?.grid || !data?.fields) {
+      console.warn("Wind file could not be decoded", file.file_path);
 
-    const w = extractWindAtPoint(
-      data,
-      selectedPoint.lat,
-      selectedPoint.lng
-    );
-
-    if (w) {
+      baseTime.setUTCHours(baseTime.getUTCHours() - 1);
+      continue;
+    }
+      
+    const w = extractWindAtPoint(data, selectedPoint.lat, selectedPoint.lng);
+    if (w && isFinite(w.ws) && isFinite(w.wd)) {
       winds.push({ ...w, hours: 1 });
     }
 
-    // step back 1 hour
     baseTime.setUTCHours(baseTime.getUTCHours() - 1);
   }
-
+  
   if (!winds.length) {
     document.getElementById("status").innerText = "No wind data found";
     return;
@@ -341,23 +436,32 @@ async function runModel() {
 
   document.getElementById("status").innerText = "Computing trajectory...";
 
-  const trajPoints = computeBackTrajectory(
-    selectedPoint.lat,
-    selectedPoint.lng,
-    winds
-  );
 
-  const geo = trajectoryToGeoJSON(trajPoints);
+  const centerlinePoints = computeBackTrajectory(selectedPoint.lat, selectedPoint.lng, winds);
+  const centerlineGeo = trajectoryToGeoJSON(centerlinePoints, { hours });
 
-  // clear old layers
+  const ensemble = computeEnsembleTrajectories(selectedPoint.lat, selectedPoint.lng, winds, 40);
+  const footprint = buildFootprint(ensemble, 0.005, 0.005);
+					 
   centerlineLayer.clearLayers();
+  cloudLayer.clearLayers();
+  densityLayer.clearLayers();
 
-  L.geoJSON(geo, {
-    color: "#00ffff",
-    weight: 3
+  
+
+  L.geoJSON(centerlineGeo, {
+     color: "#00ffff",
+     weight: 3
   }).addTo(centerlineLayer);
 
-  document.getElementById("status").innerText = "Trajectory complete";
+  drawParticleCloud(ensemble);
+  drawPotentialInfluence(footprint, 0.02, 0.02);
+
+  const windSummary = winds[0]
+    ? `${winds[0].wd.toFixed(0)}° at ${winds[0].ws.toFixed(1)} m/s`
+    : "N/A";
+
+  document.getElementById("status").innerText = `Trajectory complete — ${ensemble.length} particles, ${footprint.length} influence cells, first step ${windSummary}`;
 }
 
  
