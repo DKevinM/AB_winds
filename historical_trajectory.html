@@ -49,9 +49,58 @@
 <div id="map"></div>
   
 
+async function loadBacktrajResults() {
+  const base = "https://dkevinm.github.io/AB_winds/odour_data/";
 
+  const [center, cloud, density] = await Promise.all([
+    fetch(base + "backtraj_centerlines.geojson").then(r => r.json()),
+    fetch(base + "backtraj_cloud.geojson").then(r => r.json()),
+    fetch(base + "backtraj_density.geojson").then(r => r.json())
+  ]);
 
-  
+  drawResults(center, cloud, density);
+}	
+
+function drawResults(center, cloud, density) {
+
+  centerlineLayer.clearLayers();
+  cloudLayer.clearLayers();
+  densityLayer.clearLayers();
+
+  // centerline
+  L.geoJSON(center, {
+    color: "#00ffff",
+    weight: 3
+  }).addTo(centerlineLayer);
+
+  // cloud
+  L.geoJSON(cloud, {
+    pointToLayer: (f, latlng) =>
+      L.circleMarker(latlng, {
+        radius: 2,
+        color: "#7fcdbb",
+        fillOpacity: 0.3
+      })
+  }).addTo(cloudLayer);
+
+  // density
+  L.geoJSON(density, {
+    style: f => ({
+      color: "#ff7f00",
+      fillOpacity: Math.min(0.6, f.properties.count / 50)
+    })
+  }).addTo(densityLayer);
+}
+	
+
+async function runModel() {
+  document.getElementById("status").innerText = "Loading trajectory...";
+  await loadBacktrajResults();
+  document.getElementById("status").innerText = "Done";
+}
+
+	
+	
 <script>
 let lastModifiedSeen = null;
 
