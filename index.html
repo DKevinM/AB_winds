@@ -115,6 +115,23 @@
     
     const overlays = {};   // for layer control
 
+
+    function scheduleHourlyRefresh() {
+      const now = new Date();
+      const next = new Date(now);
+      next.setMinutes(0, 0, 0);
+      next.setHours(next.getHours() + 1);
+
+      const delay = Math.max(60000, next.getTime() - now.getTime());
+      console.log("Next hourly reload in", Math.round(delay / 1000), "seconds");
+
+      setTimeout(() => {
+        window.location.reload();
+      }, delay);
+    }
+
+
+    
     
     function loadOutlineLayer(url, color, name) {
       return fetch(url)
@@ -627,6 +644,8 @@ async function loadWind() {
       setInterval(() => {
         document.getElementById("info").innerHTML = getWindTimeDiagnostics();
       }, 60000);
+
+      scheduleHourlyRefresh();
     });
     
         
