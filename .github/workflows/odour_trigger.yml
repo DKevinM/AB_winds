@@ -3,18 +3,10 @@ name: Odour Trigger API
 permissions:
   actions: write
   contents: write
-  
+
 on:
-  workflow_dispatch:
-    inputs:
-      lat:
-        required: true
-      lon:
-        required: true
-      time:
-        required: true
-      hours:
-        required: true
+  repository_dispatch:
+    types: [run_odour_model]
 
 jobs:
   odour:
@@ -34,10 +26,10 @@ jobs:
 
     - name: Run odour back trajectory model
       env:
-        LAT: ${{ github.event.inputs.lat }}
-        LON: ${{ github.event.inputs.lon }}
-        TIME_UTC: ${{ github.event.inputs.time }}
-        HOURS: ${{ github.event.inputs.hours }}
+        LAT: ${{ github.event.client_payload.lat }}
+        LON: ${{ github.event.client_payload.lon }}
+        TIME_UTC: ${{ github.event.client_payload.time }}
+        HOURS: ${{ github.event.client_payload.hours }}
       run: |
         python odour/backtraj_core.py
 
