@@ -49,11 +49,7 @@ def angle_diff_deg(a: float, b: float) -> float:
 
 
 def uv_to_dir_speed(u: float, v: float) -> Tuple[float, float]:
-    """
-    Convert Cartesian wind components to direction/speed.
-    Direction convention here is the direction of motion, clockwise from north.
-    """
-    speed = math.sqrt(m1["u"]**2 + m1["v"]**2)
+    speed = math.sqrt(u * u + v * v)
     direction = (math.degrees(math.atan2(u, v)) + 360.0) % 360.0
     return direction, speed
 
