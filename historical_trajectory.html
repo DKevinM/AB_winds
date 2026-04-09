@@ -54,6 +54,34 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 
+// =============================
+// ADD STATIONS
+// =============================
+fetch("https://dkevinm.github.io/AB_datapull/data/output/stations.json")
+  .then(r => r.json())
+  .then(data => {
+    console.log("station data:", data);
+
+    data.forEach(s => {
+
+      const lat = parseFloat(s.latitude || s.lat);
+      const lon = parseFloat(s.longitude || s.lon);
+
+      if (!isFinite(lat) || !isFinite(lon)) return;
+
+      L.circleMarker([lat, lon], {
+        radius: 5,
+        color: "#00ffff",
+        fillOpacity: 0.8
+      }).addTo(map);
+
+    });
+  })
+  .catch(err => console.error("Stations load failed", err));
+
+
+  
+
 fetch("https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data/NPRI.geojson")
   .then(r => r.json())
   .then(fc => {
