@@ -421,6 +421,7 @@ async function runModel() {
       
     const w = extractWindAtPoint(data, selectedPoint.lat, selectedPoint.lng);
     if (w && isFinite(w.ws) && isFinite(w.wd)) {
+	  w.wd = (w.wd + 180) % 360;	
       winds.push({ ...w, hours: 1 });
     }
 
