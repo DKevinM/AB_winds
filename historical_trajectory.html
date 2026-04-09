@@ -56,7 +56,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 // =============================
 // STATIONS (GeoJSON)
 // =============================
-fetch("https://dkevinm.github.io/AB_datapull/data/stations.geojson")
+fetch("https://DKevinM.github.io/AB_datapull/data/stations.geojson")
   .then(r => r.json())
   .then(fc => {
     L.geoJSON(fc, {
@@ -82,7 +82,7 @@ fetch("https://dkevinm.github.io/AB_datapull/data/stations.geojson")
 // =============================
 // PURPLEAIR
 // =============================
-fetch("https://dkevinm.github.io/AB_datapull/data/AB_PM25_map.json")
+fetch("https://DKevinM.github.io/AB_datapull/data/AB_PM25_map.json")
   .then(r => r.json())
   .then(data => {
     data.forEach(s => {
