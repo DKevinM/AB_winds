@@ -22,7 +22,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install numpy xarray cfgrib requests supabase
+        pip install numpy xarray cfgrib requests supabase rasterio shapely
 
     - name: Run odour back trajectory model
       env:
