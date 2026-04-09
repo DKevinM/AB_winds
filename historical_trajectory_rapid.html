@@ -192,7 +192,7 @@ fetch(PURPLE_URL)
         `eAQHI: ${eAQHI}<br>` +
         `PM₂.₅ (corr): ${pm.toFixed(1)} µg/m³` +
         `<hr>` +
-        `<a href="/AQHI.forecast/history/sensor_compare.html?sensor_index=${sensorIndex}"
+        `<a href="/AQHI.forecast/history/web/sensor_compare.html?sensor_index=${sensorIndex}"
            target="_blank">
            View historical PM2.5
         </a>`          
@@ -370,7 +370,21 @@ function computeEnsembleTrajectories(startLat, startLon, winds, nParticles = 40)
           color: "#222",
           weight: 1,
           fillOpacity: 0.85
-        }).bindPopup(html);
+		const popupContent = html || `
+		  <b>${stationName || "Station"}</b><br>
+		  AQHI: ${aqhi ?? "NA"}<br>
+		`;
+		
+		const fullPopup = `
+		  ${popupContent}
+		  <hr>
+		  <a href="https://dkevinm.github.io/AB_datapull/web/station_compare.html?station=${encodeURIComponent(stationName)}"
+			 target="_blank">
+			 View historical data
+		  </a>
+		`;
+		
+		marker.bindPopup(fullPopup);
   
         marker.addTo(markerGroup);
       });
