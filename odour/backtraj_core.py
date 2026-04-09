@@ -128,7 +128,7 @@ def get_surface_slope(lat: float, lon: float) -> float:
     return 0.0
 
 
-def terrain_slope(lat: float, lon: float) -> Tuple[float, float]:
+def terrain_slope(lat: float, lon: float, step_deg: float = 0.01):
     slope = get_surface_slope(lat, lon)
     return slope, slope
 
