@@ -110,7 +110,12 @@ window.dataReady
 
       const popupContent = html || `
         <b>${stationName || "Station"}</b><br>
-        AQHI: ${aqhi ?? "NA"}
+        AQHI: ${aqhi ?? "NA"}<br>
+        <hr>
+        <a href="https://dkevinm.github.io/AB_datapull/web/station_compare.html?station=${encodeURIComponent(stationName)}"
+           target="_blank">
+           View historical data
+        </a>
       `;
 
       const marker = L.circleMarker([lat, lon], {
@@ -152,7 +157,12 @@ fetch("https://DKevinM.github.io/AB_datapull/data/AB_PM25_map.json")
       marker.bindPopup(`
         <strong>PurpleAir</strong><br>
         <b>${label}</b><br>
-        Sensor index: ${sensorIndex}
+        Sensor index: ${sensorIndex}<br>
+        <hr>
+        <a href="https://dkevinm.github.io/AB_datapull/web/sensor_compare.html?sensor_index=${sensorIndex}"
+           target="_blank">
+           View historical PM2.5
+        </a>
       `);
 
       marker.addTo(purpleLayer);
