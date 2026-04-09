@@ -75,9 +75,6 @@ def dir_speed_to_uv(direction_deg: float, speed: float) -> Tuple[float, float]:
 # DEM / SLOPE (CLEAN)
 # ---------------------------
 
-# ---------------------------
-# DEM + SLOPE (CLEAN)
-# ---------------------------
 class DEM:
     def get_elevation(self, lat: float, lon: float) -> float:
         return 0.0
@@ -131,6 +128,11 @@ def get_surface_slope(lat: float, lon: float) -> float:
 def terrain_slope(lat: float, lon: float, step_deg: float = 0.01):
     slope = get_surface_slope(lat, lon)
     return slope, slope
+
+def terrain_steering_direction(dzdx: float, dzdy: float) -> float:
+    # simple directional proxy from slope values
+    return math.degrees(math.atan2(-dzdx, -dzdy)) % 360.0
+
 
 def terrain_spread_factor(start_elev: float, current_elev: float) -> float:
     diff = current_elev - start_elev
