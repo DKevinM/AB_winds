@@ -129,24 +129,6 @@ fetch("https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data/NPRI.geojs
   .catch(err => console.error("NPRI load failed", err));
 
 
-  
-if (window.stations) {
-  window.stations.forEach(s => {
-    if (!s.lat || !s.lon) return;
-
-    L.circleMarker([s.lat, s.lon], {
-      radius: 5,
-      color: "#00ffff",
-      fillOpacity: 0.8
-    }).addTo(map);
-  });
-} else {
-  console.log("No stations found in data.js");
-}
-
-
-
-  
 
 
   
