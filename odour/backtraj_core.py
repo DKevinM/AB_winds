@@ -53,7 +53,7 @@ def uv_to_dir_speed(u: float, v: float) -> Tuple[float, float]:
     Convert Cartesian wind components to direction/speed.
     Direction convention here is the direction of motion, clockwise from north.
     """
-    speed = math.sqrt(u * u + v * v)
+    speed = math.sqrt(m1["u"]**2 + m1["v"]**2)
     direction = (math.degrees(math.atan2(u, v)) + 360.0) % 360.0
     return direction, speed
 
@@ -125,9 +125,16 @@ def get_surface_slope(lat: float, lon: float) -> float:
     return 0.0
 
 
-def terrain_slope(lat: float, lon: float, step_deg: float = 0.01):
-    slope = get_surface_slope(lat, lon)
-    return slope, slope
+def terrain_slope(lat, lon, step_deg=0.005):
+    z_center = get_surface_height(lat, lon)
+    z_east  = get_surface_height(lat, lon + step_deg)
+    z_west  = get_surface_height(lat, lon - step_deg)
+    z_north = get_surface_height(lat + step_deg, lon)
+    z_south = get_surface_height(lat - step_deg, lon)
+    dzdx = (z_east - z_west) / (2 * step_deg)
+    dzdy = (z_north - z_south) / (2 * step_deg)
+    return dzdx, dzdy
+    
 
 def terrain_steering_direction(dzdx: float, dzdy: float) -> float:
     # simple directional proxy from slope values
@@ -415,7 +422,9 @@ class MetStoreV2:
 class ParticleState:
     lat: float
     lon: float
-    z_m: float  # treated as meters above local ground
+    z_m: float
+    u_turb: float = 0.0
+    v_turb: float = 0.0
 
 
 def advect_latlon(lat: float, lon: float, u: float, v: float, dt_s: float) -> Tuple[float, float]:
@@ -432,7 +441,7 @@ def apply_terrain_steering(
     v: float,
     terrain_strength: float = 0.30,
     max_turn_deg: float = 20.0,
-    slope_step_deg: float = 0.01
+    slope_step_deg: float = 0.005
 ) -> Tuple[float, float]:
     """
     Nudge flow toward downslope / valley guidance.
@@ -447,8 +456,8 @@ def apply_terrain_steering(
 
     diff = angle_diff_deg(slope_dir, wind_dir)
 
-    slope_mag = get_surface_slope(lat, lon)
-    terrain_factor = max(0.0, 1.0 - speed / 8.0) * (slope_mag / 10.0)
+    slope_mag = math.sqrt(dzdx**2 + dzdy**2)
+    terrain_factor = max(0.0, min(1.0, (3.0 - speed) / 3.0))
     adjust = clamp(diff * terrain_factor * terrain_strength, -max_turn_deg, max_turn_deg)
 
     new_dir = (wind_dir + adjust) % 360.0
@@ -473,13 +482,25 @@ def run_back_trajectories(
     n_steps = int((hours * 3600) // dt_s)
     rng = np.random.default_rng(seed)
 
+    alpha = 0.5  # turbulence persistence
+
     start_elev = get_surface_height(start_lat, start_lon)
 
     centerlines = []
     cloud_points = []
 
     for z0 in start_heights_m:
-        parts = [ParticleState(start_lat, start_lon, float(z0)) for _ in range(n_particles)]
+        def jitter_latlon(lat, lon, meters=10):
+            dlat = meters / 111000.0
+            dlon = meters / (111000.0 * max(1e-8, math.cos(math.radians(lat))))
+            return (
+                lat + rng.normal(0, dlat),
+                lon + rng.normal(0, dlon)
+            )        
+        parts = [
+            ParticleState(*jitter_latlon(start_lat, start_lon), float(z0))
+            for _ in range(n_particles)
+        ]        
         track_center = []
 
         for k in range(n_steps + 1):
@@ -504,8 +525,16 @@ def run_back_trajectories(
                 z_asl = terrain_now + p.z_m
                 m1 = met.sample(t, p.lat, p.lon, z_asl)
 
-                u1 = -m1["u"] + rng.normal(0, horiz_sigma_ms * spread_factor)
-                v1 = -m1["v"] + rng.normal(0, horiz_sigma_ms * spread_factor)
+
+                sigma_h = horiz_sigma_ms * math.sqrt(dt_s / 60.0) * spread_factor
+                
+                p.u_turb = alpha * p.u_turb + rng.normal(0, sigma_h)
+                p.v_turb = alpha * p.v_turb + rng.normal(0, sigma_h)
+                
+                u1 = -m1["u"] + p.u_turb
+                v1 = -m1["v"] + p.v_turb
+
+                
 
                 if use_terrain_steering:
                     u1, v1 = apply_terrain_steering(p.lat, p.lon, u1, v1)
@@ -522,8 +551,11 @@ def run_back_trajectories(
                     z_mid_asl
                 )
 
-                u2 = -m2["u"] + rng.normal(0, horiz_sigma_ms * spread_factor)
-                v2 = -m2["v"] + rng.normal(0, horiz_sigma_ms * spread_factor)
+
+                
+                u2 = -m2["u"] + p.u_turb
+                v2 = -m2["v"] + p.v_turb
+                
 
                 if use_terrain_steering:
                     u2, v2 = apply_terrain_steering(lat_mid, lon_mid, u2, v2)
