@@ -55,30 +55,52 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 
 // =============================
-// ADD STATIONS
+// STATIONS (GeoJSON)
 // =============================
-fetch("https://dkevinm.github.io/AB_datapull/data/output/stations.json")
+fetch("https://dkevinm.github.io/AB_datapull/data/stations.geojson")
+  .then(r => r.json())
+  .then(fc => {
+    L.geoJSON(fc, {
+      pointToLayer: (f, latlng) =>
+        L.circleMarker(latlng, {
+          radius: 5,
+          color: "#00ffff",
+          fillOpacity: 0.8
+        })
+    }).addTo(map);
+  })
+  .catch(err => console.error("Stations load failed", err));
+
+
+
+// =============================
+// PURPLEAIR
+// =============================
+fetch("https://dkevinm.github.io/AB_datapull/data/AB_PM25_map.json")
   .then(r => r.json())
   .then(data => {
-    console.log("station data:", data);
+
+    console.log("PurpleAir loaded:", data.length);
 
     data.forEach(s => {
 
-      const lat = parseFloat(s.latitude || s.lat);
-      const lon = parseFloat(s.longitude || s.lon);
+      const lat = parseFloat(s.latitude);
+      const lon = parseFloat(s.longitude);
 
       if (!isFinite(lat) || !isFinite(lon)) return;
 
       L.circleMarker([lat, lon], {
-        radius: 5,
-        color: "#00ffff",
-        fillOpacity: 0.8
+        radius: 4,
+        color: "#8000ff",
+        fillOpacity: 0.6
       }).addTo(map);
 
     });
-  })
-  .catch(err => console.error("Stations load failed", err));
 
+  })
+  .catch(err => console.error("PurpleAir load failed", err));
+
+  
 
   
 
