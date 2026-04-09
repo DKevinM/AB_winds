@@ -33,7 +33,13 @@ def run_odour_index(
     """
 
     print("Loading meteorology...")
-    met = MetStore(MET_FOLDER)
+    met = MetStoreV2(
+        bucket="winds",
+        model="HRDPS",
+        use_supabase=True,
+        target_time=time_utc,
+        window_hours=6
+    )
 
     print("Running back trajectories...")
     centerlines, cloud = run_back_trajectories(
