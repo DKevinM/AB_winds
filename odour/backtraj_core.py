@@ -132,6 +132,14 @@ def terrain_slope(lat: float, lon: float) -> Tuple[float, float]:
     slope = get_surface_slope(lat, lon)
     return slope, slope
 
+def terrain_spread_factor(start_elev: float, current_elev: float) -> float:
+    diff = current_elev - start_elev
+    if diff < -50.0:
+        return 1.2   # valley enhancement
+    if diff > 50.0:
+        return 0.7   # ridge suppression
+    return 1.0
+    
 
 # ---------------------------
 # Data model
