@@ -11,6 +11,10 @@ import numpy as np
 import requests
 from supabase import create_client
 
+import rasterio
+
+
+
 EARTH_R = 6371000.0  # meters
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -64,25 +68,45 @@ def dir_speed_to_uv(direction_deg: float, speed: float) -> Tuple[float, float]:
     return u, v
 
 
+
+
+
 # ---------------------------
-# DEM hook
+# DEM / SLOPE (CLEAN)
 # ---------------------------
 
+# ---------------------------
+# DEM + SLOPE (CLEAN)
+# ---------------------------
 class DEM:
-    """
-    Placeholder DEM interface.
-
-    Replace get_elevation() with a raster lookup, database lookup,
-    or another terrain source when ready.
-    """
-    def __init__(self, path: Optional[str] = None):
-        self.path = path
-
     def get_elevation(self, lat: float, lon: float) -> float:
         return 0.0
 
 
-_dem = DEM()
+class RasterDEM(DEM):
+    def __init__(self, dem_path: str, slope_path: str):
+        self.dem = rasterio.open(dem_path)
+        self.dem_band = self.dem.read(1)
+
+        self.slope = rasterio.open(slope_path)
+        self.slope_band = self.slope.read(1)
+
+    def get_elevation(self, lat: float, lon: float) -> float:
+        try:
+            row, col = self.dem.index(lon, lat)
+            return float(self.dem_band[row, col])
+        except:
+            return 0.0
+
+    def get_slope(self, lat: float, lon: float) -> float:
+        try:
+            row, col = self.slope.index(lon, lat)
+            return float(self.slope_band[row, col])
+        except:
+            return 0.0
+
+
+_dem = None
 
 
 def set_dem(dem_obj: DEM) -> None:
@@ -91,38 +115,22 @@ def set_dem(dem_obj: DEM) -> None:
 
 
 def get_surface_height(lat: float, lon: float) -> float:
+    if _dem is None:
+        return 0.0
     return float(_dem.get_elevation(lat, lon))
 
 
-def terrain_slope(lat: float, lon: float, step_deg: float = 0.01) -> Tuple[float, float]:
-    """
-    Approximate terrain gradient from 4 neighboring elevations.
-    Returns (dzdx, dzdy) in raw elevation differences across the chosen step.
-    """
-    e_n = get_surface_height(lat + step_deg, lon)
-    e_s = get_surface_height(lat - step_deg, lon)
-    e_e = get_surface_height(lat, lon + step_deg)
-    e_w = get_surface_height(lat, lon - step_deg)
-
-    dzdx = e_e - e_w
-    dzdy = e_n - e_s
-    return dzdx, dzdy
+def get_surface_slope(lat: float, lon: float) -> float:
+    if _dem is None:
+        return 0.0
+    if hasattr(_dem, "get_slope"):
+        return float(_dem.get_slope(lat, lon))
+    return 0.0
 
 
-def terrain_steering_direction(dzdx: float, dzdy: float) -> float:
-    """
-    Direction of downslope / valley guidance, clockwise from north.
-    """
-    return math.degrees(math.atan2(-dzdx, -dzdy)) % 360.0
-
-
-def terrain_spread_factor(start_elev: float, current_elev: float) -> float:
-    diff = current_elev - start_elev
-    if diff < -50.0:
-        return 1.2   # valley enhancement
-    if diff > 50.0:
-        return 0.7   # ridge suppression
-    return 1.0
+def terrain_slope(lat: float, lon: float) -> Tuple[float, float]:
+    slope = get_surface_slope(lat, lon)
+    return slope, slope
 
 
 # ---------------------------
@@ -429,7 +437,8 @@ def apply_terrain_steering(
 
     diff = angle_diff_deg(slope_dir, wind_dir)
 
-    terrain_factor = max(0.0, 1.0 - speed / 8.0)
+    slope_mag = get_surface_slope(lat, lon)
+    terrain_factor = max(0.0, 1.0 - speed / 8.0) * (slope_mag / 10.0)
     adjust = clamp(diff * terrain_factor * terrain_strength, -max_turn_deg, max_turn_deg)
 
     new_dir = (wind_dir + adjust) % 360.0
@@ -608,8 +617,10 @@ if __name__ == "__main__":
     start_time = dt.datetime.fromisoformat(os.environ["TIME_UTC"])
     hours = float(os.environ["HOURS"])
 
-    # Replace with real DEM object when ready:
-    # set_dem(MyRasterDEM("dem.tif"))
+    set_dem(RasterDEM(
+        "data/Alberta_dem_1km.tif",
+        "data/Alberta_slope_1km.tif"
+    ))
 
     met = MetStoreV2(
         folder="met_data",
