@@ -30,6 +30,8 @@ jobs:
         LON: ${{ github.event.client_payload.lon }}
         TIME_UTC: ${{ github.event.client_payload.time }}
         HOURS: ${{ github.event.client_payload.hours }}
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}        
       run: |
         python odour/backtraj_core.py
 
