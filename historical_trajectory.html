@@ -29,10 +29,13 @@
 
 <div id="panel">
   <b>Odour Index</b>
-  Time (UTC):
+  Time (enter local - Alberta, auto-converted to UTC):
   <input id="time" type="datetime-local">
   Hours:
   <input id="hours" type="number" value="4" min="1" max="12">
+  <span style="font-size:12px; color:#aaa;">
+    Enter Alberta time; the model converts it to UTC.
+  </span>  
   <button onclick="runModel()">Run Odour Model</button>
   <span id="status"></span>
 </div>
@@ -66,14 +69,17 @@ fetch("https://DKevinM.github.io/AB_datapull/data/stations.geojson")
           color: "#00ffff",
           fillOpacity: 0.8
         });
-        const name = f.properties?.station_name || "Station";
+        const name =
+          f.properties?.station_name ||
+          f.properties?.name ||
+          "Station";
         marker.bindTooltip(name, {
           direction: "top",
           offset: [0, -5]
         });
         return marker;
       }
-    }).addTo(map);
+    }).addTo(stationsLayer);
   })
   .catch(err => console.error("Stations load failed", err));
 
@@ -93,8 +99,8 @@ fetch("https://DKevinM.github.io/AB_datapull/data/AB_PM25_map.json")
         radius: 4,
         color: "#8000ff",
         fillOpacity: 0.6
-      }).addTo(map);
-      const label = `PurpleAir<br>PM2.5: ${s.pm25 ?? "NA"}`;
+      }).addTo(purpleLayer);
+      const label = `<b>${s.name ?? s.sensor_index ?? "PurpleAir Sensor"}</b>`;
       marker.bindTooltip(label, {
         direction: "top",
         offset: [0, -5]
@@ -117,14 +123,17 @@ fetch("https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data/NPRI.geojs
           color: "#ff0000",
           fillOpacity: 0.7
         });
-        const name = f.properties?.FacilityName || "NPRI Facility";
+        const name =
+          f.properties?.FacilityName ||
+          f.properties?.CompanyName ||
+          "NPRI Facility";
         marker.bindTooltip(name, {
           direction: "top",
           offset: [0, -5]
         });
         return marker;
       }
-    }).addTo(map);
+    }).addTo(npriLayer);
   })
   .catch(err => console.error("NPRI load failed", err));
 
@@ -133,10 +142,27 @@ fetch("https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data/NPRI.geojs
 
   
 // LAYERS
+const stationsLayer = L.layerGroup().addTo(map);
+const purpleLayer = L.layerGroup().addTo(map);
+const npriLayer = L.layerGroup().addTo(map);
+  
 const centerlineLayer = L.layerGroup().addTo(map);
 const cloudLayer = L.layerGroup().addTo(map);
 const densityLayer = L.layerGroup().addTo(map);
 
+const overlayMaps = {
+  "Stations": stationsLayer,
+  "PurpleAir": purpleLayer,
+  "NPRI": npriLayer,
+  "Back Trajectory Centerlines": centerlineLayer,
+  "Back Trajectory Cloud": cloudLayer,
+  "Back Trajectory Density": densityLayer
+};
+
+L.control.layers(null, overlayMaps, { collapsed: false }).addTo(map);
+
+
+  
 // CLICK LOCATION
 let marker;
 map.on('click', e => {
@@ -192,7 +218,13 @@ async function loadTrajectories() {
 
   // CENTERLINE
   L.geoJSON(centerGeo, {
-    style: { color: "#00ffff", weight: 2 }
+    style: { color: "#00ffff", weight: 2 },
+    onEachFeature: (feature, layer) => {
+      const z0 = feature.properties?.z0_m ?? "NA";
+      layer.bindTooltip(`Back trajectory<br>Start height: ${z0} m`, {
+        sticky: true
+      });
+    }
   }).addTo(centerlineLayer);
 
   // CLOUD
@@ -204,7 +236,14 @@ async function loadTrajectories() {
         color: "#111",
         weight: 0.5,
         fillOpacity: 0.6
-      })
+      }),
+    onEachFeature: (feature, layer) => {
+      const t = feature.properties?.t ?? "NA";
+      const z = feature.properties?.z_m ?? "NA";
+      layer.bindTooltip(`Particle<br>Time: ${t}<br>Height: ${z} m`, {
+        sticky: true
+      });
+    }
   }).addTo(cloudLayer);
 
   // DENSITY
@@ -214,7 +253,13 @@ async function loadTrajectories() {
       weight: 0.3,
       fillColor: "#ff7f00",
       fillOpacity: Math.min(0.6, (f.properties.count || 0) / 50)
-    })
+    }),
+    onEachFeature: (feature, layer) => {
+      const count = feature.properties?.count ?? 0;
+      layer.bindTooltip(`Trajectory density<br>Count: ${count}`, {
+        sticky: true
+      });
+    }
   }).addTo(densityLayer);
 
   return true;
@@ -228,7 +273,7 @@ function startPolling() {
   if (trajectoryPoll) clearInterval(trajectoryPoll);
 
   document.getElementById("status").innerText =
-    "Model running — checking every 2 minutes...";
+    "Model running — checking for results every 2 minutes...";
 
   trajectoryPoll = setInterval(async () => {
 
@@ -257,17 +302,18 @@ async function runModel() {
   }
 
   const time = document.getElementById("time").value;
+  console.log("Local Alberta time sent to model:", time);
   const hours = document.getElementById("hours").value;
 
   if (!time) {
-    alert("Enter a UTC time.");
+    alert("Enter a local time");
     return;
   }
 
   modelStartTime = Date.now();
 
   document.getElementById("status").innerText =
-    "Triggering Python model (15–20 min)...";
+    "Triggering Python model...";
 
 const res = await fetch(
   "https://dawn-dew-c0e8.kevinmcc.workers.dev/",
@@ -277,8 +323,9 @@ const res = await fetch(
     body: JSON.stringify({
       lat: selectedPoint.lat,
       lon: selectedPoint.lng,
-      time: time,
-      hours: hours
+      time_local: time,
+      timezone: "America/Edmonton",
+      hours: Number(hours)
     })
   }
 );
