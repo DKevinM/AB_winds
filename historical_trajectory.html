@@ -59,28 +59,23 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 // =============================
 // STATIONS (GeoJSON)
 // =============================
-fetch("https://DKevinM.github.io/AB_datapull/data/stations.geojson")
-  .then(r => r.json())
-  .then(fc => {
-    L.geoJSON(fc, {
-      pointToLayer: (f, latlng) => {
-        const marker = L.circleMarker(latlng, {
-          radius: 5,
-          color: "#00ffff",
-          fillOpacity: 0.8
-        });
-        const name =
-          f.properties?.station_name ||
-          f.properties?.name ||
-          "Station";
-        marker.bindTooltip(name, {
-          direction: "top",
-          offset: [0, -5]
-        });
-        return marker;
-      }
-    }).addTo(stationsLayer);
-  })
+window.dataReady.then(() => {
+  fetchAllStationData().then(allStations => {
+    allStations.forEach(({ stationName, lat, lon, html, aqhi }) => {
+      const fillColor = getColor(String(aqhi || "NA"));
+
+      const marker = L.circleMarker([lat, lon], {
+        radius: 7,
+        fillColor: fillColor,
+        color: "#222",
+        weight: 1,
+        fillOpacity: 0.85
+      }).bindPopup(html);
+
+      marker.addTo(stationsLayer);
+    });
+  });
+});
   .catch(err => console.error("Stations load failed", err));
 
 
@@ -101,10 +96,12 @@ fetch("https://DKevinM.github.io/AB_datapull/data/AB_PM25_map.json")
         fillOpacity: 0.6
       }).addTo(purpleLayer);
       const label = `<b>${s.name ?? s.sensor_index ?? "PurpleAir Sensor"}</b>`;
-      marker.bindTooltip(label, {
-        direction: "top",
-        offset: [0, -5]
-      });
+      marker.bindPopup(`
+        <strong>PurpleAir</strong><br>
+        ${label}<br>
+        Sensor index: ${sensorIndex ?? "NA"}<br>
+        eAQHI: ${eAQHI}
+      `)
     });
   })
   .catch(err => console.error("PurpleAir load failed", err));
@@ -127,10 +124,10 @@ fetch("https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data/NPRI.geojs
           f.properties?.FacilityName ||
           f.properties?.CompanyName ||
           "NPRI Facility";
-        marker.bindTooltip(name, {
-          direction: "top",
-          offset: [0, -5]
-        });
+          .bindPopup(`
+            <b>${label}</b><br>
+            Year: ${yr}
+          `)
         return marker;
       }
     }).addTo(npriLayer);
