@@ -359,37 +359,41 @@ function computeEnsembleTrajectories(startLat, startLon, winds, nParticles = 40)
 
   
 
-  window.dataReady.then(() => {
-    fetchAllStationData().then(allStations => {
-      allStations.forEach(({ stationName, lat, lon, html, aqhi }) => {
-        const fillColor = getColor(String(aqhi || "NA"));
-  
-        const marker = L.circleMarker([lat, lon], {
-          radius: 7,
-          fillColor: fillColor,
-          color: "#222",
-          weight: 1,
-          fillOpacity: 0.85
-		const popupContent = html || `
-		  <b>${stationName || "Station"}</b><br>
-		  AQHI: ${aqhi ?? "NA"}<br>
-		`;
-		
-		const fullPopup = `
-		  ${popupContent}
-		  <hr>
-		  <a href="https://dkevinm.github.io/AB_datapull/web/station_compare.html?station=${encodeURIComponent(stationName)}"
-			 target="_blank">
-			 View historical data
-		  </a>
-		`;
-		
-		marker.bindPopup(fullPopup);
-  
-        marker.addTo(markerGroup);
-      });
-    });
-  });
+	window.dataReady.then(() => {
+	  fetchAllStationData().then(allStations => {
+	    allStations.forEach(({ stationName, lat, lon, html, aqhi }) => {
+	
+	      const fillColor = getColor(String(aqhi || "NA"));
+	
+	      const marker = L.circleMarker([lat, lon], {
+	        radius: 7,
+	        fillColor: fillColor,
+	        color: "#222",
+	        weight: 1,
+	        fillOpacity: 0.85
+	      });  // ✅ THIS WAS MISSING
+	
+	      const popupContent = html || `
+	        <b>${stationName || "Station"}</b><br>
+	        AQHI: ${aqhi ?? "NA"}<br>
+	      `;
+	
+	      const fullPopup = `
+	        ${popupContent}
+	        <hr>
+	        <a href="https://dkevinm.github.io/AB_datapull/web/station_compare.html?station=${encodeURIComponent(stationName)}"
+	           target="_blank">
+	           View historical data
+	        </a>
+	      `;
+	
+	      marker.bindPopup(fullPopup);
+	
+	      marker.addTo(markerGroup);
+	
+	    });
+	  });
+	});
 
   
 async function runModel() {
