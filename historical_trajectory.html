@@ -53,6 +53,42 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
+
+fetch("https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data/NPRI.geojson")
+  .then(r => r.json())
+  .then(fc => {
+    L.geoJSON(fc, {
+      pointToLayer: (f, latlng) =>
+        L.circleMarker(latlng, {
+          radius: 4,
+          color: "#ff0000",
+          fillOpacity: 0.7
+        })
+    }).addTo(map);
+  })
+  .catch(err => console.error("NPRI load failed", err));
+
+
+if (window.stations) {
+  window.stations.forEach(s => {
+    if (!s.lat || !s.lon) return;
+
+    L.circleMarker([s.lat, s.lon], {
+      radius: 5,
+      color: "#00ffff",
+      fillOpacity: 0.8
+    }).addTo(map);
+  });
+} else {
+  console.log("No stations found in data.js");
+}
+
+
+
+  
+
+
+  
 // LAYERS
 const centerlineLayer = L.layerGroup().addTo(map);
 const cloudLayer = L.layerGroup().addTo(map);
