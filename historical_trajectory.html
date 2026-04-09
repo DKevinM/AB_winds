@@ -57,88 +57,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 
-  
-// =============================
-// STATIONS (GeoJSON)
-// =============================
-window.dataReady.then(() => {
-  fetchAllStationData().then(allStations => {
-    allStations.forEach(({ stationName, lat, lon, html, aqhi }) => {
-      const fillColor = getColor(String(aqhi || "NA"));
 
-      const marker = L.circleMarker([lat, lon], {
-        radius: 7,
-        fillColor: fillColor,
-        color: "#222",
-        weight: 1,
-        fillOpacity: 0.85
-      }).bindPopup(html);
-
-      marker.addTo(stationsLayer);
-    });
-  })
-  .catch(err => console.error("Stations load failed", err));
-
-
-
-// =============================
-// PURPLEAIR
-// =============================
-fetch("https://DKevinM.github.io/AB_datapull/data/AB_PM25_map.json")
-  .then(r => r.json())
-  .then(data => {
-    data.forEach(s => {
-      const lat = parseFloat(s.latitude);
-      const lon = parseFloat(s.longitude);
-      if (!isFinite(lat) || !isFinite(lon)) return;
-      const marker = L.circleMarker([lat, lon], {
-        radius: 4,
-        color: "#8000ff",
-        fillOpacity: 0.6
-      }).addTo(purpleLayer);
-      const label = `<b>${s.name ?? s.sensor_index ?? "PurpleAir Sensor"}</b>`;
-      marker.bindPopup(`
-        <strong>PurpleAir</strong><br>
-        ${label}<br>
-        Sensor index: ${sensorIndex ?? "NA"}<br>
-        eAQHI: ${eAQHI}
-      `)
-    });
-  })
-  .catch(err => console.error("PurpleAir load failed", err));
-
-  
-// =============================
-// NPRI
-// =============================
-fetch("https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data/NPRI.geojson")
-  .then(r => r.json())
-  .then(fc => {
-    L.geoJSON(fc, {
-      pointToLayer: (f, latlng) => {
-        const marker = L.circleMarker(latlng, {
-          radius: 4,
-          color: "#ff0000",
-          fillOpacity: 0.7
-        });
-        const name =
-          f.properties?.FacilityName ||
-          f.properties?.CompanyName ||
-          "NPRI Facility";
-          .bindPopup(`
-            <b>${label}</b><br>
-            Year: ${yr}
-          `)
-        return marker;
-      }
-    }).addTo(npriLayer);
-  })
-  .catch(err => console.error("NPRI load failed", err));
-
-
-
-
-  
 // LAYERS
 const stationsLayer = L.layerGroup().addTo(map);
 const purpleLayer = L.layerGroup().addTo(map);
@@ -158,6 +77,140 @@ const overlayMaps = {
 };
 
 L.control.layers(null, overlayMaps, { collapsed: false }).addTo(map);
+
+
+  
+  
+function getColor(aqhi) {
+  const lut = {
+    "1":  "#01cbff",
+    "2":  "#0099cb",
+    "3":  "#016797",
+    "4":  "#fffe03",
+    "5":  "#ffcb00",
+    "6":  "#ff9835",
+    "7":  "#fd6866",
+    "8":  "#fe0002",
+    "9":  "#cc0001",
+    "10": "#9a0100",
+    "10+": "#640100"
+  };
+  return lut[String(aqhi)] || "#D3D3D3";
+}  
+
+  
+// =============================
+// STATIONS (GeoJSON)
+// =============================
+window.dataReady
+  .then(() => fetchAllStationData())
+  .then(allStations => {
+    allStations.forEach(({ stationName, lat, lon, html, aqhi }) => {
+      const fillColor = getColor(String(aqhi || "NA"));
+
+      const popupContent = html || `
+        <b>${stationName || "Station"}</b><br>
+        AQHI: ${aqhi ?? "NA"}
+      `;
+
+      const marker = L.circleMarker([lat, lon], {
+        radius: 7,
+        fillColor: fillColor,
+        color: "#222",
+        weight: 1,
+        fillOpacity: 0.85
+      });
+
+      marker.bindPopup(popupContent);
+      marker.addTo(stationsLayer);
+    });
+  })
+  .catch(err => console.error("Stations load failed", err));
+
+
+
+// =============================
+// PURPLEAIR
+// =============================
+fetch("https://DKevinM.github.io/AB_datapull/data/AB_PM25_map.json")
+  .then(r => r.json())
+  .then(data => {
+    data.forEach(s => {
+      const lat = parseFloat(s.latitude ?? s.lat);
+      const lon = parseFloat(s.longitude ?? s.lon);
+      if (!isFinite(lat) || !isFinite(lon)) return;
+
+      const sensorIndex = s.sensor_index ?? "NA";
+      const label = s.name ?? s.sensor_index ?? "PurpleAir Sensor";
+
+      const marker = L.circleMarker([lat, lon], {
+        radius: 4,
+        color: "#8000ff",
+        fillOpacity: 0.6
+      });
+
+      marker.bindPopup(`
+        <strong>PurpleAir</strong><br>
+        <b>${label}</b><br>
+        Sensor index: ${sensorIndex}
+      `);
+
+      marker.addTo(purpleLayer);
+    });
+  })
+  .catch(err => console.error("PurpleAir load failed", err));
+
+  
+// =============================
+// NPRI
+// =============================
+fetch("https://raw.githubusercontent.com/DKevinM/NextGen_dk/main/data/NPRI.geojson")
+  .then(r => r.json())
+  .then(fc => {
+    L.geoJSON(fc, {
+      pointToLayer: (f, latlng) => {
+        const marker = L.circleMarker(latlng, {
+          radius: 4,
+          color: "#ff0000",
+          fillOpacity: 0.7
+        });
+
+        const facilityName =
+          f.properties?.FACILITY_NAME ||
+          f.properties?.FacilityName ||
+          f.properties?.CompanyName ||
+          "NPRI Facility";
+
+        const companyName =
+          f.properties?.COMPANY_NAME ||
+          f.properties?.Company ||
+          "";
+
+        const yr =
+          f.properties?.REPORTING_YEAR ||
+          f.properties?.ReportingYear ||
+          "";
+
+        const popupLabel = companyName
+          ? `${facilityName} (${companyName})`
+          : facilityName;
+
+        marker.bindPopup(`
+          <b>${popupLabel}</b><br>
+          ${yr ? `Year: ${yr}<br>` : ""}
+          <small>${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}</small>
+        `);
+
+        return marker;
+      }
+    }).addTo(npriLayer);
+  })
+  .catch(err => console.error("NPRI load failed", err));
+
+
+
+
+  
 
 
   
