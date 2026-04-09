@@ -652,7 +652,27 @@ def density_grid_to_geojson(cloud_points, cell_size_deg: float = 0.01, min_count
 if __name__ == "__main__":
     lat = float(os.environ["LAT"])
     lon = float(os.environ["LON"])
-    start_time = dt.datetime.fromisoformat(os.environ["TIME_UTC"])
+    from datetime import timezone
+    from zoneinfo import ZoneInfo
+    
+    time_local = os.environ.get("TIME_LOCAL")
+    time_utc = os.environ.get("TIME_UTC")
+    
+    if time_local:
+        # LOCAL (Alberta) → UTC
+        naive_local = dt.datetime.fromisoformat(time_local)
+    
+        local_dt = naive_local.replace(tzinfo=ZoneInfo("America/Edmonton"))
+        start_time = local_dt.astimezone(timezone.utc)
+    
+    elif time_utc:
+        # fallback if UTC already provided
+        start_time = dt.datetime.fromisoformat(time_utc)
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=timezone.utc)
+    
+    else:
+        raise ValueError("Must provide TIME_LOCAL or TIME_UTC")
     hours = float(os.environ["HOURS"])
 
     set_dem(RasterDEM(
