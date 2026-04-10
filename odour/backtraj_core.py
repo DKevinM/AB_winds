@@ -28,11 +28,13 @@ if SUPABASE_URL and SUPABASE_KEY:
 # ---------------------------
 # Helpers
 # ---------------------------
-
 def parse_iso_z(s: str) -> dt.datetime:
     if s.endswith("Z"):
-        s = s[:-1]
-    return dt.datetime.fromisoformat(s)
+        s = s[:-1] + "+00:00"
+    dt_obj = dt.datetime.fromisoformat(s)
+    if dt_obj.tzinfo is None:
+        dt_obj = dt_obj.replace(tzinfo=dt.timezone.utc)
+    return dt_obj.astimezone(dt.timezone.utc)
 
 
 def clamp(x: float, a: float, b: float) -> float:
