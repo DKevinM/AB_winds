@@ -333,11 +333,10 @@
 
       const p  = f.properties || {};
       const nm = p.stationName || p.StationName || "Station";
-      return `
-        <b>${nm}</b><br>
-        ${p.html || "No data"}<br>
-        (≈${h.dist_km.toFixed(1)} km away)
-      `;
+      let aq = p.aqhi ?? p.AQHI ?? "N/A";
+      if (!isNaN(+aq)) {
+        aq = (+aq > 10 ? "10+" : (+aq).toFixed(0));
+      }
       if (!isNaN(+aq)) {
         const v = +aq;
         aq = v > 10 ? "10+" : v.toFixed(0);
@@ -926,26 +925,57 @@ async function getWindSeries(lat, lng, timeISO, steps = 3) {
 (async function initLayers() {
   try {
 
-    const [stations, purple, npri] = await Promise.all([
-      loadStations(),
+    const [purple, npri] = await Promise.all([
       loadPurple(),
       loadNPRI()
     ]);
 
-    window.STATIONS_FC = stations;
     window.PURPLE_FC = purple;
     window.NPRI_FC = npri;
 
-    plotStations(stations);
     plotPurple(purple);
     plotNPRI(npri);
 
-    console.log("Layers loaded on startup");
+    // ✅ NEW: stations from data.js
+    window.dataReady
+      .then(() => fetchAllStationData())
+      .then(allStations => {
+
+        window.STATIONS_FC = {
+          type: "FeatureCollection",
+          features: allStations.map(s => ({
+            type: "Feature",
+            geometry: {
+              type: "Point",
+              coordinates: [s.lon, s.lat]
+            },
+            properties: {
+              stationName: s.stationName,
+              aqhi: s.aqhi,
+              html: s.html
+            }
+          }))
+        };
+
+        allStations.forEach(({ lat, lon, html }) => {
+          const marker = L.circleMarker([lat, lon], {
+            radius: 6,
+            color: "#0066cc",
+            fillOpacity: 0.8
+          });
+
+          marker.bindPopup(html);
+          marker.addTo(stationLayerGroup);
+        });
+
+        console.log("Stations loaded from data.js");
+
+      });
 
   } catch (err) {
     console.error("Layer init failed", err);
   }
-})();  
+})();
   
 // ─────────────────────────────────────────
 // Click handler – ensemble back-trajectory + footprint
