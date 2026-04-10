@@ -38,7 +38,7 @@
 
 <div id="panel">
   <b>Odour Index</b>
-  Time (UTC):
+  Time (local - Alberta, auto-converted to UTC):
   <input id="time" type="datetime-local">
   Hours:
   <input id="hours" type="number" value="4" min="1" max="12">
@@ -340,7 +340,7 @@ function drawPotentialInfluence(cells, dlat = 0.02, dlon = 0.02) {
   });
 }
 
-function computeEnsembleTrajectories(startLat, startLon, winds, nParticles = 40) {
+function computeEnsembleTrajectories(startLat, startLon, winds, nParticles = 100) {
   const trajectories = [];
   const spread = 0.01;
 
