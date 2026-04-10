@@ -443,7 +443,7 @@ async function runModel() {
   const centerlinePoints = computeBackTrajectory(selectedPoint.lat, selectedPoint.lng, winds);
   const centerlineGeo = trajectoryToGeoJSON(centerlinePoints, { hours });
 
-  const ensemble = computeEnsembleTrajectories(selectedPoint.lat, selectedPoint.lng, winds, 40);
+  const ensemble = computeEnsembleTrajectories(selectedPoint.lat, selectedPoint.lng, winds, 200);
   const footprint = buildFootprint(ensemble, 0.005, 0.005);
 					 
   centerlineLayer.clearLayers();
