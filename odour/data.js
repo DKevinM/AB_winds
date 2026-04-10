@@ -150,7 +150,7 @@ const shortformOverride = {
           AQHI: ${aqhiValue}<br>
           ${lines.join("<br>")}
           <hr>
-          <a href="/AQHI.forecast/history/station_compare.html?station=${encodeURIComponent(stationName)}"
+          <a href="/AB_datapull/web/station_compare.html?station=${encodeURIComponent(stationName)}"
              target="_blank">
              View historical data
           </a>       
