@@ -28,7 +28,7 @@ jobs:
       env:
         LAT: ${{ github.event.client_payload.lat }}
         LON: ${{ github.event.client_payload.lon }}
-        TIME_UTC: ${{ github.event.client_payload.time }}
+        TIME_LOCAL: ${{ github.event.client_payload.time_local }}
         HOURS: ${{ github.event.client_payload.hours }}
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}        
