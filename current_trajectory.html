@@ -9,6 +9,7 @@
   
   <script src="js/wind_fetch.js"></script>
   <script src="js/trajectory.js"></script>
+  <script src="odour/data.js"></script>
   
   <!-- Leaflet CSS -->
   <link
@@ -332,7 +333,11 @@
 
       const p  = f.properties || {};
       const nm = p.stationName || p.StationName || "Station";
-      let aq   = p.aqhi ?? p.AQHI ?? "N/A";
+      return `
+        <b>${nm}</b><br>
+        ${p.html || "No data"}<br>
+        (≈${h.dist_km.toFixed(1)} km away)
+      `;
       if (!isNaN(+aq)) {
         const v = +aq;
         aq = v > 10 ? "10+" : v.toFixed(0);
@@ -443,80 +448,41 @@
   }
 
   // ─────────────────────────────────────────
-  // Load FCs (from origin-data.js)
+  // Load stations (data.js)
   // ─────────────────────────────────────────
-  async function loadStations() {
-    const res = await fetch("https://dkevinm.github.io/AB_datapull/data/last6h.csv");
-    const text = await res.text();
+  window.dataReady
+    .then(() => fetchAllStationData())
+    .then(allStations => {
   
-    const rows = text.trim().split("\n");
-    const headers = rows.shift().split(",");
-  
-    const parsed = rows.map(line => {
-      const cols = line.split(",");
-      return Object.fromEntries(headers.map((h, i) => [h, cols[i]]));
-    });
-  
-    const byStation = new Map();
-  
-    parsed.forEach(obj => {
-      const lat = parseFloat(obj.Latitude);
-      const lon = parseFloat(obj.Longitude);
-      if (!isFinite(lat) || !isFinite(lon)) return;
-  
-      const name = obj.StationName || obj.stationName || obj.Name || "Station";
-      const key = name.trim().toLowerCase();
-  
-      if (!byStation.has(key)) {
-        byStation.set(key, {
+      window.STATIONS_FC = {
+        type: "FeatureCollection",
+        features: allStations.map(s => ({
           type: "Feature",
-          properties: {
-            stationName: name,
-            Latitude: lat,
-            Longitude: lon
-          },
           geometry: {
             type: "Point",
-            coordinates: [lon, lat]
+            coordinates: [s.lon, s.lat]
+          },
+          properties: {
+            stationName: s.stationName,
+            aqhi: s.aqhi,
+            html: s.html
           }
+        }))
+      };
+  
+      allStations.forEach(({ stationName, lat, lon, html, aqhi }) => {
+  
+        const marker = L.circleMarker([lat, lon], {
+          radius: 6,
+          color: "#0066cc",
+          fillOpacity: 0.8
         });
-      }
   
-      const f = byStation.get(key);
-      const p = f.properties;
+        marker.bindPopup(html);
+        marker.addTo(stationLayerGroup);
+      });
   
-      const param = (obj.ParameterName || "").trim();
-      const val = obj.Value;
-  
-      if (param === "AQHI") {
-        p.AQHI = val;
-        p.aqhi = val;
-      } else if (param) {
-        p[param] = val;
-      }
-  
-      if (!p._rows) p._rows = [];
-      p._rows.push(obj);
     });
-  
-    return {
-      type: "FeatureCollection",
-      features: Array.from(byStation.values())
-    };
-  }
-  
-  async function loadPurple() {
-    const res = await fetch("https://dkevinm.github.io/AB_datapull/data/AB_PM25_map.json");
-    const json = await res.json();
-    return toPointFC(json);
-  }
-  
-  async function loadNPRI() {
-    const res = await fetch("https://dkevinm.github.io/AB_datapull/data/output/NPRI.geojson");
-    const data = await res.json();
-    window.NPRI_FC = data;
-    return data;
-  }
 
 
   // ─────────────────────────────────────────
