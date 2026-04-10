@@ -371,24 +371,10 @@ function computeEnsembleTrajectories(startLat, startLon, winds, nParticles = 100
 	        color: "#222",
 	        weight: 1,
 	        fillOpacity: 0.85
-	      });  // ✅ THIS WAS MISSING
+	      });  
 	
-	      const popupContent = html || `
-	        <b>${stationName || "Station"}</b><br>
-	        AQHI: ${aqhi ?? "NA"}<br>
-	      `;
-	
-	      const fullPopup = `
-	        ${popupContent}
-	        <hr>
-	        <a href="https://dkevinm.github.io/AB_datapull/web/station_compare.html?station=${encodeURIComponent(stationName)}"
-	           target="_blank">
-	           View historical data
-	        </a>
-	      `;
-	
-	      marker.bindPopup(fullPopup);
-	
+		  const popupContent = html || `<b>${stationName || "Station"}</b><br>No data`;	
+	 	  marker.bindPopup(popupContent);	
 	      marker.addTo(markerGroup);
 	
 	    });
