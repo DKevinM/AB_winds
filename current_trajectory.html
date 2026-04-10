@@ -922,9 +922,28 @@ async function getWindSeries(lat, lng, timeISO, steps = 3) {
   return winds;
 }
 
+
+
+  
+async function loadPurple() {
+  const res = await fetch("https://dkevinm.github.io/AB_datapull/data/AB_PM25_map.json");
+  const json = await res.json();
+  return toPointFC(json);
+}
+
+async function loadNPRI() {
+  const res = await fetch("https://dkevinm.github.io/AB_datapull/data/output/NPRI.geojson");
+  const data = await res.json();
+  window.NPRI_FC = data;
+  return data;
+}
+
+
+
+
+  
 (async function initLayers() {
   try {
-
     const [purple, npri] = await Promise.all([
       loadPurple(),
       loadNPRI()
@@ -936,11 +955,9 @@ async function getWindSeries(lat, lng, timeISO, steps = 3) {
     plotPurple(purple);
     plotNPRI(npri);
 
-    // ✅ NEW: stations from data.js
     window.dataReady
       .then(() => fetchAllStationData())
       .then(allStations => {
-
         window.STATIONS_FC = {
           type: "FeatureCollection",
           features: allStations.map(s => ({
@@ -957,25 +974,29 @@ async function getWindSeries(lat, lng, timeISO, steps = 3) {
           }))
         };
 
+        stationLayerGroup.clearLayers();
+
         allStations.forEach(({ lat, lon, html }) => {
-          const marker = L.circleMarker([lat, lon], {
+          L.circleMarker([lat, lon], {
             radius: 6,
             color: "#0066cc",
+            weight: 1,
             fillOpacity: 0.8
-          });
-
-          marker.bindPopup(html);
-          marker.addTo(stationLayerGroup);
+          })
+          .bindPopup(html || "No data")
+          .addTo(stationLayerGroup);
         });
 
         console.log("Stations loaded from data.js");
-
-      });
+      })
+      .catch(err => console.error("Stations load failed", err));
 
   } catch (err) {
     console.error("Layer init failed", err);
   }
 })();
+
+
   
 // ─────────────────────────────────────────
 // Click handler – ensemble back-trajectory + footprint
