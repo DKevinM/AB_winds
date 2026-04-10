@@ -408,7 +408,17 @@
         weight: 1,
         fillOpacity: 0.7
       })
-        .bindPopup(`<b>${nm}</b><br>PM2.5: ${pmStr} µg/m³`)
+        .bindPopup(`
+          <strong>PurpleAir</strong><br>
+          ${nm}<br>
+          ${p.sensor_index != null ? `Sensor index: ${p.sensor_index}<br>` : ""}
+          PM₂.₅ (corr): ${pmStr} µg/m³
+          <hr>
+          <a href="https://dkevinm.github.io/AB_datapull/web/sensor_compare.html?sensor_index=${p.sensor_index}"
+             target="_blank">
+             View historical PM2.5
+          </a>
+        `)
         .addTo(purpleLayerGroup);
     });
 
