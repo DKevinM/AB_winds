@@ -7,13 +7,15 @@ const EARTH_M_PER_DEG_LAT = 111320.0;
 
 // Step one segment backward
 function stepBackOneSegment(lat, lon, ws, wdDeg, hours = 1.0) {
-  const flowDirDeg = (wdDeg + 180.0) % 360.0;
-  const theta = flowDirDeg * Math.PI / 180.0;
+  // assume wdDeg = coming-from direction (standard met)
+  const theta = (wdDeg * Math.PI) / 180.0;
 
-  const u = ws * Math.sin(theta);
-  const v = ws * Math.cos(theta);
+  // meteorological → u/v
+  const u = -ws * Math.sin(theta); // east-west
+  const v = -ws * Math.cos(theta); // north-south
 
   const dt = hours * 3600.0;
+
   const dxBack = -u * dt;
   const dyBack = -v * dt;
 
@@ -28,23 +30,39 @@ function stepBackOneSegment(lat, lon, ws, wdDeg, hours = 1.0) {
 }
 
 // Main trajectory
+function interpDir(d0, d1, t) {
+  let diff = d1 - d0;
+  if (diff > 180) diff -= 360;
+  if (diff < -180) diff += 360;
+  return (d0 + t * diff + 360) % 360;
+}
+
 function computeBackTrajectory(lat0, lon0, winds) {
   const points = [[lat0, lon0]];
   let lat = lat0;
   let lon = lon0;
 
-  (winds || []).forEach(w => {
-    const ws = Number(w.ws);
-    const wd = Number(w.wd);
-    const hours = w.hours ?? 1.0;
+  if (!winds || winds.length < 2) return points;
 
-    if (!isFinite(ws) || !isFinite(wd)) return;
+  for (let i = 0; i < winds.length - 1; i++) {
+    const w0 = winds[i];
+    const w1 = winds[i + 1];
 
-    const [latNew, lonNew] = stepBackOneSegment(lat, lon, ws, wd, hours);
-    lat = latNew;
-    lon = lonNew;
-    points.push([lat, lon]);
-  });
+    const subSteps = 120; // 2-min resolution
+
+    for (let j = 0; j < subSteps; j++) {
+      const t = j / subSteps;
+
+      const ws = w0.ws + t * (w1.ws - w0.ws);
+      const wd = interpDir(w0.wd, w1.wd, t);
+
+      const [latNew, lonNew] = stepBackOneSegment(lat, lon, ws, wd, 1 / subSteps);
+
+      lat = latNew;
+      lon = lonNew;
+      points.push([lat, lon]);
+    }
+  }
 
   return points;
 }
