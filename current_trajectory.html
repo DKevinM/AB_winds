@@ -907,7 +907,7 @@ async function getWindSeries(lat, lng, timeISO, steps = 3) {
   
   const rows = await res.json();
   const seenTimes = new Set();
-  for (const row of rows) {
+  for (const row of rows.slice(0, steps)) {
     const valid = row.valid_time;
     if (seenTimes.has(valid)) continue;
     seenTimes.add(valid);
