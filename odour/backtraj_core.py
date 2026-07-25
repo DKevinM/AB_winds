@@ -703,7 +703,7 @@ if __name__ == "__main__":
 
     from pathlib import Path
 
-    outdir = Path("odour_data")
+    outdir = Path(os.environ.get("OUTDIR", "odour_data"))
     outdir.mkdir(parents=True, exist_ok=True)
 
     centers_gj = centerlines_to_geojson(centers)
