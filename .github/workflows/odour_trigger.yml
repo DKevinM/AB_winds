@@ -1,44 +1,65 @@
 name: Odour Trigger API
 
 permissions:
-  actions: write
   contents: write
 
 on:
+  workflow_dispatch:
+    inputs:
+      lat:
+        description: "Latitude"
+        required: true
+        type: string
+      lon:
+        description: "Longitude"
+        required: true
+        type: string
+      time_local:
+        description: "Start time, Alberta local (e.g. 2026-07-25T14:00:00)"
+        required: true
+        type: string
+      hours:
+        description: "Trajectory duration (hours)"
+        required: true
+        default: "6"
+        type: string
   repository_dispatch:
     types: [run_odour_model]
 
 jobs:
-  odour:
+  request:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Install dependencies
-      run: |
-        pip install numpy xarray cfgrib requests supabase rasterio shapely
-
-    - name: Run odour back trajectory model
+    - name: Write trigger request
       env:
-        LAT: ${{ github.event.client_payload.lat }}
-        LON: ${{ github.event.client_payload.lon }}
-        TIME_LOCAL: ${{ github.event.client_payload.time_local }}
-        HOURS: ${{ github.event.client_payload.hours }}
-        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}        
+        LAT: ${{ github.event.inputs.lat || github.event.client_payload.lat }}
+        LON: ${{ github.event.inputs.lon || github.event.client_payload.lon }}
+        TIME_LOCAL: ${{ github.event.inputs.time_local || github.event.client_payload.time_local }}
+        HOURS: ${{ github.event.inputs.hours || github.event.client_payload.hours }}
       run: |
-        python odour/backtraj_core.py
+        python3 - <<'PYEOF'
+        import json, os, uuid, datetime
+        req = {
+            "request_id": str(uuid.uuid4()),
+            "lat": float(os.environ["LAT"]),
+            "lon": float(os.environ["LON"]),
+            "time_local": os.environ["TIME_LOCAL"],
+            "hours": float(os.environ["HOURS"]),
+            "requested_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "status": "pending"
+        }
+        with open("trigger_request.json", "w") as f:
+            json.dump(req, f, indent=2)
+        print(json.dumps(req, indent=2))
+        PYEOF
 
-    - name: Commit results
+    - name: Commit request
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add odour_data/*.geojson
-        git commit -m "Update odour back trajectories" || echo "No changes"
+        git add trigger_request.json
+        git commit -m "Request odour trajectory run"
         git push
