@@ -102,10 +102,14 @@ AB_LAT_MIN, AB_LAT_MAX = 48, 62
 AB_LON_MIN, AB_LON_MAX = -125, -100
 
 LEVELS_AGL = [10, 40, 80, 120]
+# HRDPS doesn't publish TMP at 10m (that height is wind-only; temperature's
+# surface level is 2m) - confirmed live against dd.weather.gc.ca before adding.
+TMP_LEVELS_AGL = [2, 40, 80, 120]
 
 FIELDS = {
     "UGRD": [f"AGL-{h}m" for h in LEVELS_AGL],
     "VGRD": [f"AGL-{h}m" for h in LEVELS_AGL],
+    "TMP": [f"AGL-{h}m" for h in TMP_LEVELS_AGL],
     "HPBL": ["Sfc"],
     "RH": ["AGL-2m"],
     "DPT": ["AGL-2m"]
@@ -278,43 +282,6 @@ def process_run(run):
 
         else:
             print("Already exists in Supabase:", filename)
-
-        
-
-
-        # -------------------------------
-        # Upload to Supabase (NEW STEP)
-        # -------------------------------
-        
-        filename = os.path.basename(fname)
-        
-        # extract date for storage path
-        year  = int(run.strftime("%Y"))
-        month = int(run.strftime("%m"))
-        day   = int(run.strftime("%d"))
-        
-        valid_time = run + dt.timedelta(hours=lead)        
-        storage_path = f"hrdps/{valid_time.year}/{valid_time.month:02d}/{valid_time.day:02d}/{filename}"
-        
-        if not wind_file_exists(storage_path):
-        
-            print("Uploading to Supabase:", filename)
-        
-            try:
-                upload_to_supabase(fname, storage_path)
-                insert_metadata_from_run(run, lead, storage_path)
-        
-            except Exception as e:
-                if "already exists" in str(e):
-                    print("Skipped existing file")
-                else:
-                    raise
-        
-        else:
-            print("Already exists in Supabase:", filename)
-
-
-
 
 
 if __name__ == "__main__":
