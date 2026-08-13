@@ -273,6 +273,15 @@ async function loadTrajectories() {
   const cloudGeo = await cloudRes.json();
   const densityGeo = await densityRes.json();
 
+  // GitHub Pages' CDN has multiple edge nodes; the HEAD request in
+  // checkForNewOutput() can see a fresh Last-Modified from one node while
+  // this GET lands on another node still serving pre-run (empty) content.
+  // Don't trust the timestamp alone - only accept a result that actually
+  // has trajectory data, otherwise keep polling.
+  if (!centerGeo.features || centerGeo.features.length === 0) {
+    return false;
+  }
+
   centerlineLayer.clearLayers();
   cloudLayer.clearLayers();
   densityLayer.clearLayers();
@@ -341,12 +350,16 @@ function startPolling() {
     const ready = await checkForNewOutput();
 
     if (ready) {
-      clearInterval(trajectoryPoll);
+      const loaded = await loadTrajectories();
 
-      await loadTrajectories();
+      if (loaded) {
+        clearInterval(trajectoryPoll);
 
-      document.getElementById("status").innerText =
-        "Trajectory loaded";
+        document.getElementById("status").innerText =
+          "Trajectory loaded";
+      }
+      // else: HEAD said ready but the GET raced a stale CDN edge node -
+      // keep polling, next cycle will pick up the fully-propagated data.
     }
 
   }, 120000);
