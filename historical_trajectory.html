@@ -63,16 +63,22 @@ const stationsLayer = L.layerGroup().addTo(map);
 const purpleLayer = L.layerGroup().addTo(map);
 const npriLayer = L.layerGroup().addTo(map);
   
-const centerlineLayer = L.layerGroup().addTo(map);
-const cloudLayer = L.layerGroup().addTo(map);
+// One combined layer group per start height (line + particles together)
+// so each height can be switched on/off independently.
+const height10Layer = L.layerGroup().addTo(map);
+const height40Layer = L.layerGroup().addTo(map);
+const height80Layer = L.layerGroup().addTo(map);
 const densityLayer = L.layerGroup().addTo(map);
+
+const HEIGHT_LAYERS = { 10: height10Layer, 40: height40Layer, 80: height80Layer };
 
 const overlayMaps = {
   "Stations": stationsLayer,
   "PurpleAir": purpleLayer,
   "NPRI": npriLayer,
-  "Back Trajectory Centerlines": centerlineLayer,
-  "Back Trajectory Cloud": cloudLayer,
+  "Trajectory 10m": height10Layer,
+  "Trajectory 40m": height40Layer,
+  "Trajectory 80m": height80Layer,
   "Back Trajectory Density": densityLayer
 };
 
@@ -311,43 +317,45 @@ async function loadTrajectories() {
     return false;
   }
 
-  centerlineLayer.clearLayers();
-  cloudLayer.clearLayers();
+  height10Layer.clearLayers();
+  height40Layer.clearLayers();
+  height80Layer.clearLayers();
   densityLayer.clearLayers();
 
-  // CENTERLINE
-  L.geoJSON(centerGeo, {
-    style: feature => ({
-      color: colorForHeight(feature.properties?.z0_m),
-      weight: 2
-    }),
-    onEachFeature: (feature, layer) => {
-      const z0 = feature.properties?.z0_m ?? "NA";
-      layer.bindTooltip(`Back trajectory<br>Start height: ${z0} m`, {
-        sticky: true
-      });
-    }
-  }).addTo(centerlineLayer);
+  // CENTERLINE + CLOUD, split per start height so each has its own
+  // on/off toggle in the layer control instead of one shared layer.
+  Object.entries(HEIGHT_LAYERS).forEach(([z0Key, targetLayer]) => {
+    const z0 = Number(z0Key);
 
-  // CLOUD
-  L.geoJSON(cloudGeo, {
-    pointToLayer: (f, latlng) =>
-      L.circleMarker(latlng, {
-        radius: 3,
-        fillColor: colorForHeight(f.properties?.z0_m),
-        color: "#111",
-        weight: 0.5,
-        fillOpacity: 0.6
-      }),
-    onEachFeature: (feature, layer) => {
-      const t = feature.properties?.t ?? "NA";
-      const z = feature.properties?.z_m ?? "NA";
-      const z0 = feature.properties?.z0_m ?? "NA";
-      layer.bindTooltip(`Particle<br>Start height: ${z0} m<br>Time: ${t}<br>Current height: ${z} m`, {
-        sticky: true
-      });
-    }
-  }).addTo(cloudLayer);
+    L.geoJSON(centerGeo, {
+      filter: feature => Math.round(feature.properties?.z0_m) === z0,
+      style: { color: colorForHeight(z0), weight: 2 },
+      onEachFeature: (feature, layer) => {
+        layer.bindTooltip(`Back trajectory<br>Start height: ${z0} m`, {
+          sticky: true
+        });
+      }
+    }).addTo(targetLayer);
+
+    L.geoJSON(cloudGeo, {
+      filter: feature => Math.round(feature.properties?.z0_m) === z0,
+      pointToLayer: (f, latlng) =>
+        L.circleMarker(latlng, {
+          radius: 3,
+          fillColor: colorForHeight(z0),
+          color: "#111",
+          weight: 0.5,
+          fillOpacity: 0.6
+        }),
+      onEachFeature: (feature, layer) => {
+        const t = feature.properties?.t ?? "NA";
+        const z = feature.properties?.z_m ?? "NA";
+        layer.bindTooltip(`Particle<br>Start height: ${z0} m<br>Time: ${t}<br>Current height: ${z} m`, {
+          sticky: true
+        });
+      }
+    }).addTo(targetLayer);
+  });
 
   // DENSITY
   L.geoJSON(densityGeo, {
