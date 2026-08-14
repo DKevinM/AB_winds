@@ -511,7 +511,7 @@ def run_back_trajectories(
 
             if k % 5 == 0:
                 for p in parts:
-                    cloud_points.append((t, p.lat, p.lon, p.z_m))
+                    cloud_points.append((t, p.lat, p.lon, p.z_m, float(z0)))
 
             if k == n_steps:
                 break
@@ -593,12 +593,12 @@ def centerlines_to_geojson(centerlines):
 
 def cloud_to_geojson(cloud_points, every_n: int = 1):
     feats = []
-    for idx, (t, lat, lon, z) in enumerate(cloud_points):
+    for idx, (t, lat, lon, z, z0) in enumerate(cloud_points):
         if every_n > 1 and (idx % every_n) != 0:
             continue
         feats.append({
             "type": "Feature",
-            "properties": {"t": t.isoformat() + "Z", "z_m": float(z)},
+            "properties": {"t": t.isoformat() + "Z", "z_m": float(z), "z0_m": float(z0)},
             "geometry": {"type": "Point", "coordinates": [float(lon), float(lat)]},
         })
     return {"type": "FeatureCollection", "features": feats}
@@ -614,7 +614,7 @@ def density_grid_to_geojson(cloud_points, cell_size_deg: float = 0.01, min_count
         j = math.floor(lat / cell_size_deg)
         return i, j
 
-    for (t, lat, lon, z) in cloud_points:
+    for (t, lat, lon, z, z0) in cloud_points:
         i, j = cell_index(lat, lon)
         counts[(i, j)] += 1
 

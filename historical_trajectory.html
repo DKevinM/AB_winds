@@ -78,6 +78,35 @@ const overlayMaps = {
 
 L.control.layers(null, overlayMaps, { collapsed: false }).addTo(map);
 
+// Trajectory start-height colors (must match backtraj_core.py's
+// start_heights_m = (10.0, 40.0, 80.0))
+const HEIGHT_COLORS = {
+  10: "#00e5ff",
+  40: "#66bb6a",
+  80: "#e91e63"
+};
+const DEFAULT_HEIGHT_COLOR = "#999999";
+function colorForHeight(z0) {
+  return HEIGHT_COLORS[Math.round(Number(z0))] || DEFAULT_HEIGHT_COLOR;
+}
+
+const heightLegend = L.control({ position: "bottomleft" });
+heightLegend.onAdd = function () {
+  const div = L.DomUtil.create("div", "info legend");
+  div.style.background = "white";
+  div.style.padding = "6px 8px";
+  div.style.borderRadius = "4px";
+  div.style.boxShadow = "0 1px 4px rgba(0,0,0,0.4)";
+  div.style.fontSize = "12px";
+  div.style.lineHeight = "1.4";
+  div.innerHTML = "<strong>Trajectory start height</strong><br>" +
+    Object.entries(HEIGHT_COLORS).map(([z0, color]) =>
+      `<span style="display:inline-block;width:10px;height:10px;background:${color};margin-right:5px;border:1px solid #111;"></span>${z0} m`
+    ).join("<br>");
+  return div;
+};
+heightLegend.addTo(map);
+
 
   
   
@@ -288,7 +317,10 @@ async function loadTrajectories() {
 
   // CENTERLINE
   L.geoJSON(centerGeo, {
-    style: { color: "#00ffff", weight: 2 },
+    style: feature => ({
+      color: colorForHeight(feature.properties?.z0_m),
+      weight: 2
+    }),
     onEachFeature: (feature, layer) => {
       const z0 = feature.properties?.z0_m ?? "NA";
       layer.bindTooltip(`Back trajectory<br>Start height: ${z0} m`, {
@@ -302,7 +334,7 @@ async function loadTrajectories() {
     pointToLayer: (f, latlng) =>
       L.circleMarker(latlng, {
         radius: 3,
-        fillColor: "#7fcdbb",
+        fillColor: colorForHeight(f.properties?.z0_m),
         color: "#111",
         weight: 0.5,
         fillOpacity: 0.6
@@ -310,7 +342,8 @@ async function loadTrajectories() {
     onEachFeature: (feature, layer) => {
       const t = feature.properties?.t ?? "NA";
       const z = feature.properties?.z_m ?? "NA";
-      layer.bindTooltip(`Particle<br>Time: ${t}<br>Height: ${z} m`, {
+      const z0 = feature.properties?.z0_m ?? "NA";
+      layer.bindTooltip(`Particle<br>Start height: ${z0} m<br>Time: ${t}<br>Current height: ${z} m`, {
         sticky: true
       });
     }
