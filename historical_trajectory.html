@@ -63,22 +63,30 @@ const stationsLayer = L.layerGroup().addTo(map);
 const purpleLayer = L.layerGroup().addTo(map);
 const npriLayer = L.layerGroup().addTo(map);
   
-// One combined layer group per start height (line + particles together)
-// so each height can be switched on/off independently.
-const height10Layer = L.layerGroup().addTo(map);
-const height40Layer = L.layerGroup().addTo(map);
-const height80Layer = L.layerGroup().addTo(map);
+// Separate layer group per start height AND per line-vs-particles, so the
+// thin centerline isn't buried under that same height's particle cloud -
+// each can be switched on/off independently.
+const centerline10Layer = L.layerGroup().addTo(map);
+const centerline40Layer = L.layerGroup().addTo(map);
+const centerline80Layer = L.layerGroup().addTo(map);
+const cloud10Layer = L.layerGroup().addTo(map);
+const cloud40Layer = L.layerGroup().addTo(map);
+const cloud80Layer = L.layerGroup().addTo(map);
 const densityLayer = L.layerGroup().addTo(map);
 
-const HEIGHT_LAYERS = { 10: height10Layer, 40: height40Layer, 80: height80Layer };
+const CENTERLINE_LAYERS = { 10: centerline10Layer, 40: centerline40Layer, 80: centerline80Layer };
+const CLOUD_LAYERS = { 10: cloud10Layer, 40: cloud40Layer, 80: cloud80Layer };
 
 const overlayMaps = {
   "Stations": stationsLayer,
   "PurpleAir": purpleLayer,
   "NPRI": npriLayer,
-  "Trajectory 10m": height10Layer,
-  "Trajectory 40m": height40Layer,
-  "Trajectory 80m": height80Layer,
+  "Trajectory 10m (line)": centerline10Layer,
+  "Trajectory 40m (line)": centerline40Layer,
+  "Trajectory 80m (line)": centerline80Layer,
+  "Trajectory 10m (particles)": cloud10Layer,
+  "Trajectory 40m (particles)": cloud40Layer,
+  "Trajectory 80m (particles)": cloud80Layer,
   "Back Trajectory Density": densityLayer
 };
 
@@ -317,15 +325,14 @@ async function loadTrajectories() {
     return false;
   }
 
-  height10Layer.clearLayers();
-  height40Layer.clearLayers();
-  height80Layer.clearLayers();
+  Object.values(CENTERLINE_LAYERS).forEach(l => l.clearLayers());
+  Object.values(CLOUD_LAYERS).forEach(l => l.clearLayers());
   densityLayer.clearLayers();
 
-  // CENTERLINE + CLOUD, split per start height so each has its own
-  // on/off toggle in the layer control instead of one shared layer.
-  Object.entries(HEIGHT_LAYERS).forEach(([z0Key, targetLayer]) => {
-    const z0 = Number(z0Key);
+  // CENTERLINE + CLOUD, split per start height AND kept in separate
+  // layers from each other - the thin line was getting visually buried
+  // under that height's own dense particle cloud when they shared a layer.
+  [10, 40, 80].forEach(z0 => {
 
     L.geoJSON(centerGeo, {
       filter: feature => Math.round(feature.properties?.z0_m) === z0,
@@ -335,7 +342,7 @@ async function loadTrajectories() {
           sticky: true
         });
       }
-    }).addTo(targetLayer);
+    }).addTo(CENTERLINE_LAYERS[z0]);
 
     L.geoJSON(cloudGeo, {
       filter: feature => Math.round(feature.properties?.z0_m) === z0,
@@ -354,7 +361,7 @@ async function loadTrajectories() {
           sticky: true
         });
       }
-    }).addTo(targetLayer);
+    }).addTo(CLOUD_LAYERS[z0]);
   });
 
   // DENSITY
