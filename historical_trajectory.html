@@ -325,6 +325,18 @@ async function loadTrajectories() {
     return false;
   }
 
+  // A stale CDN edge node can also serve a *previous* completed run's
+  // full (non-empty) data instead of this run's - the length check above
+  // wouldn't catch that. Confirm the returned trajectory actually starts
+  // where we clicked before accepting it as this run's result.
+  if (selectedPoint) {
+    const [startLon, startLat] = centerGeo.features[0].geometry.coordinates[0];
+    const drift = Math.hypot(startLat - selectedPoint.lat, startLon - selectedPoint.lng);
+    if (drift > 0.01) {
+      return false;
+    }
+  }
+
   Object.values(CENTERLINE_LAYERS).forEach(l => l.clearLayers());
   Object.values(CLOUD_LAYERS).forEach(l => l.clearLayers());
   densityLayer.clearLayers();
