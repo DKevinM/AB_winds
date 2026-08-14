@@ -113,6 +113,7 @@ heightLegend.onAdd = function () {
   div.style.boxShadow = "0 1px 4px rgba(0,0,0,0.4)";
   div.style.fontSize = "12px";
   div.style.lineHeight = "1.4";
+  div.style.color = "#111";
   div.innerHTML = "<strong>Trajectory start height</strong><br>" +
     Object.entries(HEIGHT_COLORS).map(([z0, color]) =>
       `<span style="display:inline-block;width:10px;height:10px;background:${color};margin-right:5px;border:1px solid #111;"></span>${z0} m`
