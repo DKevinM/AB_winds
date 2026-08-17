@@ -16,6 +16,7 @@
 
 import os
 import subprocess
+import time
 import datetime as dt
 
 MET_DIR = "/opt/airquality/hysplit/met_data"
@@ -99,7 +100,10 @@ def files_needed_for_event(event_dt, duration_hours=72):
     return files
 
 
-def ensure_downloaded(filename, subdir=""):
+def ensure_downloaded(filename, subdir="", retries=3, retry_delay_s=15):
+    """Download with retries - a multi-thousand-request batch job WILL hit
+    transient FTP hiccups eventually; one blip shouldn't kill the whole run
+    (this is exactly what took down the first overnight Henry Pirker batch)."""
     local_path = os.path.join(MET_DIR, subdir, filename) if subdir else os.path.join(MET_DIR, filename)
     if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
         print(f"Already have {filename}")
@@ -113,17 +117,25 @@ def ensure_downloaded(filename, subdir=""):
         year = 2000 + int(filename.split(".")[1][-2:])
         url = f"{ARCHIVE_FTP_BASE}/{year}/{filename}"
 
-    print(f"Fetching {url} ...")
-    result = subprocess.run(
-        ["curl", "-s", "-m", "600", "-o", local_path, url],
-        capture_output=True, text=True
-    )
-    if result.returncode != 0 or not os.path.exists(local_path) or os.path.getsize(local_path) == 0:
+    last_err = None
+    for attempt in range(1, retries + 1):
+        print(f"Fetching {url} (attempt {attempt}/{retries}) ...")
+        result = subprocess.run(
+            ["curl", "-s", "-m", "600", "-o", local_path, url],
+            capture_output=True, text=True
+        )
+        if result.returncode == 0 and os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+            print(f"Downloaded {filename} ({os.path.getsize(local_path)} bytes)")
+            return local_path
+
+        last_err = result.stderr or f"curl exit code {result.returncode}"
         if os.path.exists(local_path):
             os.remove(local_path)
-        raise RuntimeError(f"Failed to fetch {filename}: {result.stderr}")
-    print(f"Downloaded {filename} ({os.path.getsize(local_path)} bytes)")
-    return local_path
+        if attempt < retries:
+            print(f"  attempt {attempt} failed ({last_err}); retrying in {retry_delay_s}s")
+            time.sleep(retry_delay_s)
+
+    raise RuntimeError(f"Failed to fetch {filename} after {retries} attempts: {last_err}")
 
 
 def recent_cycle_files_needed(event_dt, duration_hours):
