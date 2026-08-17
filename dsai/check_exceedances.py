@@ -14,7 +14,7 @@ import os
 import datetime as dt
 from supabase import create_client
 
-from stations import STATIONS, PARAMETERS
+from stations import WATCH_STATIONS, PARAMETERS
 from climatology import load_cache, cache_key, check_exceedance
 from run_hysplit import run_ensemble
 
@@ -59,7 +59,7 @@ def main():
         return
 
     new_triggers = 0
-    for station in STATIONS:
+    for station in WATCH_STATIONS:
         for parameter in PARAMETERS:
             key = cache_key(station, parameter)
             clim = cache.get(key)

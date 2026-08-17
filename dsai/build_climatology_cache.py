@@ -10,7 +10,7 @@
 import os
 from supabase import create_client
 
-from stations import STATIONS, PARAMETERS
+from stations import WATCH_STATIONS, PARAMETERS
 from climatology import (
     fetch_station_series,
     build_climatology,
@@ -25,7 +25,7 @@ def main():
     sb = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
 
     cache = {}
-    for station in STATIONS:
+    for station in WATCH_STATIONS:
         for parameter in PARAMETERS:
             series = fetch_station_series(sb, station, parameter, since_iso=HISTORY_SINCE)
             if not series:
