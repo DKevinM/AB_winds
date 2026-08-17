@@ -15,6 +15,10 @@ STATIONS = {
     "Edmonton McCauley": (53.549509, -113.48593),
     "Edmonton-Gold Bar": (53.54925, -113.41473),
     "Edmonton-Beverly": (53.56693, -113.39849),
+
+    # PAZA station - historical multi-year PSCF/CWT climatology work,
+    # not part of the exceedance-watch corridor above.
+    "Grande Prairie - Henry Pirker": (55.1766364, -118.8077555),
 }
 
 # Pollutants we have a proven, meaningful story for (refinery/sour-gas
