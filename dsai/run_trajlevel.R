@@ -7,6 +7,28 @@
 
 suppressMessages(library(openair))
 
+# PM2.5 and CO show a simultaneous multi-sector elevation from late 2021
+# through 2023 at Henry Pirker - verified against real wildfire records
+# (2021 BC's worst wildfire season to that point, 2023 Alberta's worst
+# on record, Grande Prairie smoke-impacted 100+ days). Multi-sector-
+# simultaneous is the tell that this is regional wildfire smoke, not a
+# directional point source, so those two pollutants exclude these
+# calendar years from the climatology; every other pollutant showed no
+# such contamination and uses full history.
+WILDFIRE_EXCLUDED_POLLUTANTS <- c("PM2.5", "CO")
+WILDFIRE_EXCLUDE_START <- as.POSIXct("2021-01-01 00:00:00", tz = "UTC")
+WILDFIRE_EXCLUDE_END   <- as.POSIXct("2024-01-01 00:00:00", tz = "UTC")
+
+# 72h backward trajectories occasionally get caught in a fast-moving
+# low-level jet and stretch across the whole Pacific/Arctic (99th
+# percentile lon/lat still lands within this window) - cropping to the
+# region that actually explains the vast majority of transport keeps
+# the map readable instead of a washed-out world view. This drops a
+# handful of extreme-outlier days from the plotted statistic, same as
+# the regional framing used in Kindzierski's own published PSCF/CWT work.
+PLOT_LON_RANGE <- c(-150, -100)
+PLOT_LAT_RANGE <- c(40, 68)
+
 args <- commandArgs(trailingOnly = TRUE)
 traj_csv <- args[1]
 readings_csv <- args[2]
@@ -29,6 +51,17 @@ names(merged_readings)[2] <- "conc"
 mytraj <- merge(traj, merged_readings, by = "date")
 mytraj <- mytraj[!is.na(mytraj$conc), ]
 
+if (pollutant %in% WILDFIRE_EXCLUDED_POLLUTANTS) {
+  before_n <- length(unique(mytraj$date))
+  mytraj <- mytraj[mytraj$date < WILDFIRE_EXCLUDE_START | mytraj$date >= WILDFIRE_EXCLUDE_END, ]
+  after_n <- length(unique(mytraj$date))
+  cat(sprintf("Wildfire-year exclusion (2021-2023) applied for %s: %d -> %d days\n",
+              pollutant, before_n, after_n))
+}
+
+mytraj <- mytraj[mytraj$lon >= PLOT_LON_RANGE[1] & mytraj$lon <= PLOT_LON_RANGE[2] &
+                  mytraj$lat >= PLOT_LAT_RANGE[1] & mytraj$lat <= PLOT_LAT_RANGE[2], ]
+
 cat(sprintf("Merged trajectory rows: %d (from %d unique days)\n",
             nrow(mytraj), length(unique(mytraj$date))))
 
@@ -47,7 +80,7 @@ for (stat in c("PSCF", "CWT")) {
     statistic = stat,
     col = "increment",
     map = TRUE,
-    main = paste("Henry Pirker -", pollutant, "-", stat, "(sample test, n =", length(unique(mytraj$date)), "days)")
+    main = paste("Henry Pirker -", pollutant, "-", stat, "(n =", length(unique(mytraj$date)), "days)")
   ))
   dev.off()
   cat("Wrote", out_file, "\n")
