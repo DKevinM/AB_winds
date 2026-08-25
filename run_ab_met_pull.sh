@@ -8,3 +8,4 @@ set +a
 cd /opt/airquality/github/AB_winds
 
 /opt/airquality/venv/bin/python py/ab_met_pull.py
+/opt/airquality/venv/bin/python py/cleanup_wind_files.py
