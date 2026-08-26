@@ -41,6 +41,35 @@
       box-shadow: 0 1px 6px rgba(0,0,0,0.2);
       max-width: 320px;
     }
+    /* Each wind file fetched for the ensemble is a multi-MB HRDPS grid -
+       a run can take anywhere from seconds (cached) to a few minutes
+       (cold). With no feedback during that wait, the page looked broken
+       even when it was working correctly. */
+    #computingIndicator {
+      display: none;
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1100;
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-family: system-ui, Arial, sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    #computingIndicator.active { display: flex; align-items: center; gap: 10px; }
+    #computingIndicator .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.35);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: computing-spin 0.8s linear infinite;
+    }
+    @keyframes computing-spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -50,11 +79,20 @@
   Click the map to compute a simple backward trajectory ensemble (in browser).<br>
   Wind comes from HRDPS (High Resolution Deterministic Prediction System, MSS, ECCC)
 </div>
+<div id="computingIndicator"><span class="spinner"></span><span id="computingIndicatorText">Computing back-trajectory…</span></div>
 
 
     
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Leaflet.markercluster - NPRI has 4400+ raw rows (2378 distinct
+     facilities, most reporting facilities have 2-4 duplicate rows with
+     no distinguishing fields - see plotNPRI) rendered with no clustering,
+     which smothered the map in red dots even before any trajectory click. -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 
 <!-- Turf.js (for distance, points, etc.) -->
 <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
@@ -142,7 +180,7 @@
   
   const stationLayerGroup = L.layerGroup().addTo(map);  // AQHI stations
   const purpleLayerGroup  = L.layerGroup().addTo(map);  // PurpleAir
-  const npriLayerGroup    = L.layerGroup().addTo(map);  // NPRI facilities
+  const npriLayerGroup    = L.markerClusterGroup({ maxClusterRadius: 40 }).addTo(map);  // NPRI facilities
 
   const baseMaps = {
     "OpenStreetMap": osmLayer
@@ -429,7 +467,23 @@
     npriLayerGroup.clearLayers();
     if (!fc || !Array.isArray(fc.features)) return;
 
-    fc.features.forEach(f => {
+    // NPRI.geojson carries 2-4 identical rows per facility (no
+    // substance-level field survives into this file, so the duplicate
+    // rows add nothing - see the AB_winds "off" investigation). Dedupe
+    // by facility name + location before rendering, on top of the
+    // clustering above.
+    const seen = new Set();
+    const deduped = fc.features.filter(f => {
+      const ll = getFeatureLatLon(f);
+      if (!ll) return false;
+      const p = f.properties || {};
+      const key = `${p.FACILITY_NAME || p.FacilityName || p.facility || ""}__${ll.lat.toFixed(4)}__${ll.lon.toFixed(4)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    deduped.forEach(f => {
       const ll = getFeatureLatLon(f);
       if (!ll) return;
 
@@ -453,7 +507,7 @@
         .addTo(npriLayerGroup);
     });
 
-    console.log("[origin] plotted NPRI:", fc.features.length);
+    console.log("[origin] plotted NPRI:", deduped.length, "of", fc.features.length, "raw rows");
   }
 
   // ─────────────────────────────────────────
@@ -1011,18 +1065,26 @@ async function loadNPRI() {
 // ─────────────────────────────────────────
 // Click handler – ensemble back-trajectory + footprint
 // ─────────────────────────────────────────
+function setComputingStatus(text) {
+  const el = document.getElementById("computingIndicator");
+  if (!text) { el.classList.remove("active"); return; }
+  document.getElementById("computingIndicatorText").textContent = text;
+  el.classList.add("active");
+}
+
 map.on("click", async (e) => {
   const { lat, lng } = e.latlng;
+  setComputingStatus("Computing back-trajectory…");
   const startElevation = await getElevation(lat, lng);
-  
- 
+
+
   // Clear any previous trajectories / footprints
   surfaceTrajLayer.clearLayers();
   touchdownLayer.clearLayers();
-  surfaceProbLayer.clearLayers();  
+  surfaceProbLayer.clearLayers();
   receptorLayer.clearLayers();
-  
-  
+
+
   // Mark receptor
   L.circleMarker(e.latlng, {
     radius: 6,
@@ -1037,9 +1099,10 @@ map.on("click", async (e) => {
     // 1) Get best available wind file
     // ─────────────────────────────────────────
     const timeISO = new Date().toISOString();
-    
+
     console.log("Selecting wind for:", timeISO);
-    
+    setComputingStatus("Fetching HRDPS wind data…");
+
     // Pull a few candidates (latest → older)
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/wind_files?valid_time=lte.${timeISO.replace("+00:00","Z")}&order=valid_time.desc&`,
@@ -1109,15 +1172,17 @@ map.on("click", async (e) => {
     // ─────────────────────────────────────────
     // 4) Build simple 4-hour series
     // ─────────────────────────────────────────
+    setComputingStatus("Fetching wind history (multiple HRDPS files)…");
     const winds3h = await getWindSeries(lat, lng, meta.valid_time, 4);
     if (!winds3h.length) {
       console.warn("No wind series — fallback to single wind");
       winds3h.push({ ws: w.ws, wd: w.wd, hours: 1 });
-    }    
-        
+    }
+
 
 
     // 3) Ensemble trajectories + footprint ("bubbles")
+    setComputingStatus("Computing 25-member trajectory ensemble…");
     const trajectories = await computeEnsembleTrajectories(lat, lng, w, {
       nParticles: 25,
       hoursBack: winds3h.length,
@@ -1256,6 +1321,8 @@ map.on("click", async (e) => {
   } catch (err) {
     console.error("Back-trajectory error:", err);
     alert("Could not compute back trajectory. Check console for details.");
+  } finally {
+    setComputingStatus(null);
   }
 });
 
