@@ -62,7 +62,28 @@ let trajectoryLayersAdded = false;
 const markerGroup = L.layerGroup();
 const paLayer     = L.layerGroup();
 const npriLayerGroup = L.layerGroup();
-const NPRI_URL = "https://dkevinm.github.io/AB_datapull/data/output/NPRI.geojson";
+
+// Live from ECCC's own ArcGIS service, not the stale static export this
+// used to read (unchanged since 2026-07-18, had 2-4 duplicate rows per
+// facility). Paginated since the server caps ~2000 records/request.
+async function fetchNpriLive() {
+  const base = "https://maps-cartes.ec.gc.ca/arcgis/rest/services/STB_DGST/NPRI/MapServer/0/query";
+  const fields = "FacilityName,CompanyName,ProvinceCode,ReportYear,NpriID,SectorDescriptionEn,City";
+  let allFeatures = [];
+  let offset = 0;
+  const pageSize = 2000;
+  while (true) {
+    const url = `${base}?where=ProvinceCode%3D%27AB%27&outFields=${fields}&f=geojson&resultRecordCount=${pageSize}&resultOffset=${offset}`;
+    const res = await fetch(url);
+    if (!res.ok) { console.error("NPRI live fetch failed:", res.status); break; }
+    const page = await res.json();
+    const feats = page.features || [];
+    allFeatures = allFeatures.concat(feats);
+    if (feats.length < pageSize) break;
+    offset += pageSize;
+  }
+  return { type: "FeatureCollection", features: allFeatures };
+}
 const map = L.map('map').setView([53.54, -113.49], 7);
 const layerRegistry = {};
   
@@ -114,8 +135,7 @@ overlayControl.addOverlay(cloudLayer, "Particle Cloud");
 overlayControl.addOverlay(densityLayer, "Potential Influence");
   
   
-fetch(NPRI_URL)
-  .then(res => res.json())
+fetchNpriLive()
   .then(fc => {
     window.NPRI_FC = fc;
     plotNPRI(fc);
@@ -250,9 +270,9 @@ function plotNPRI(fc) {
     if (!ll) return;
 
     const p   = f.properties || {};
-    const fac = p.FACILITY_NAME || p.FacilityName || "Facility";
-    const co  = p.COMPANY_NAME  || p.Company      || "";
-    const yr  = p.REPORTING_YEAR || p.ReportingYear || "";
+    const fac = p.FacilityName || p.FACILITY_NAME || "Facility";
+    const co  = p.CompanyName  || p.COMPANY_NAME  || "";
+    const yr  = p.ReportYear   || p.REPORTING_YEAR || "";
     const label = co ? `${fac} (${co})` : fac;
 
     L.circleMarker([ll.lat, ll.lon], {

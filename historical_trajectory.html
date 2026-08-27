@@ -216,10 +216,31 @@ fetch("https://DKevinM.github.io/AB_datapull/data/AB_PM25_map.json")
 
   
 // =============================
-// NPRI
+// NPRI - live from ECCC's own ArcGIS service, not the stale static
+// export this used to read (unchanged since 2026-07-18, had 2-4
+// duplicate rows per facility). Paginated since the server caps
+// ~2000 records/request.
 // =============================
-fetch("https://dkevinm.github.io/AB_datapull/data/output/NPRI.geojson")
-  .then(r => r.json())
+async function fetchNpriLive() {
+  const base = "https://maps-cartes.ec.gc.ca/arcgis/rest/services/STB_DGST/NPRI/MapServer/0/query";
+  const fields = "FacilityName,CompanyName,ProvinceCode,ReportYear,NpriID,SectorDescriptionEn,City";
+  let allFeatures = [];
+  let offset = 0;
+  const pageSize = 2000;
+  while (true) {
+    const url = `${base}?where=ProvinceCode%3D%27AB%27&outFields=${fields}&f=geojson&resultRecordCount=${pageSize}&resultOffset=${offset}`;
+    const res = await fetch(url);
+    if (!res.ok) { console.error("NPRI live fetch failed:", res.status); break; }
+    const page = await res.json();
+    const feats = page.features || [];
+    allFeatures = allFeatures.concat(feats);
+    if (feats.length < pageSize) break;
+    offset += pageSize;
+  }
+  return { type: "FeatureCollection", features: allFeatures };
+}
+
+fetchNpriLive()
   .then(fc => {
     L.geoJSON(fc, {
       pointToLayer: (f, latlng) => {
@@ -230,19 +251,18 @@ fetch("https://dkevinm.github.io/AB_datapull/data/output/NPRI.geojson")
         });
 
         const facilityName =
-          f.properties?.FACILITY_NAME ||
           f.properties?.FacilityName ||
-          f.properties?.CompanyName ||
+          f.properties?.FACILITY_NAME ||
           "NPRI Facility";
 
         const companyName =
+          f.properties?.CompanyName ||
           f.properties?.COMPANY_NAME ||
-          f.properties?.Company ||
           "";
 
         const yr =
+          f.properties?.ReportYear ||
           f.properties?.REPORTING_YEAR ||
-          f.properties?.ReportingYear ||
           "";
 
         const popupLabel = companyName
