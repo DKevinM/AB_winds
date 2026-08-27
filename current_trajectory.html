@@ -993,22 +993,33 @@ async function loadPurple() {
 // writing). Paginated because the server caps ~2000 records/request.
 const NPRI_BASE = "https://maps-cartes.ec.gc.ca/arcgis/rest/services/STB_DGST/NPRI/MapServer/0/query";
 async function loadNPRI() {
+  // loadNPRI() runs inside Promise.all([loadPurple(), loadNPRI()]) in
+  // initLayers() below - Promise.all rejects entirely if ANY of its
+  // promises throws, which would silently take PurpleAir down too if
+  // ECCC's service is unreachable (not just a bad HTTP status, a real
+  // network failure - DNS, timeout, connection refused). Catch here so
+  // an NPRI outage only ever blanks the NPRI layer, same as every other
+  // page this got wired into.
   const fields = "FacilityName,CompanyName,ProvinceCode,ReportYear,NpriID,SectorDescriptionEn,City";
   let allFeatures = [];
-  let offset = 0;
-  const pageSize = 2000;
-  while (true) {
-    const url = `${NPRI_BASE}?where=ProvinceCode%3D%27AB%27&outFields=${fields}&f=geojson&resultRecordCount=${pageSize}&resultOffset=${offset}`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      console.error("NPRI live fetch failed:", res.status);
-      break;
+  try {
+    let offset = 0;
+    const pageSize = 2000;
+    while (true) {
+      const url = `${NPRI_BASE}?where=ProvinceCode%3D%27AB%27&outFields=${fields}&f=geojson&resultRecordCount=${pageSize}&resultOffset=${offset}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.error("NPRI live fetch failed:", res.status);
+        break;
+      }
+      const page = await res.json();
+      const feats = page.features || [];
+      allFeatures = allFeatures.concat(feats);
+      if (feats.length < pageSize) break;
+      offset += pageSize;
     }
-    const page = await res.json();
-    const feats = page.features || [];
-    allFeatures = allFeatures.concat(feats);
-    if (feats.length < pageSize) break;
-    offset += pageSize;
+  } catch (err) {
+    console.error("NPRI live fetch failed (network error):", err);
   }
   const data = { type: "FeatureCollection", features: allFeatures };
   console.log("[NPRI] loaded live from ECCC:", allFeatures.length, "AB facilities");
