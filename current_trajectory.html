@@ -86,14 +86,6 @@
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-<!-- Leaflet.markercluster - NPRI has 4400+ raw rows (2378 distinct
-     facilities, most reporting facilities have 2-4 duplicate rows with
-     no distinguishing fields - see plotNPRI) rendered with no clustering,
-     which smothered the map in red dots even before any trajectory click. -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-
 <!-- Turf.js (for distance, points, etc.) -->
 <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   
@@ -173,14 +165,14 @@
 
 
   const touchdownLayer  = L.layerGroup().addTo(map);
-  const surfaceTrajLayer = L.layerGroup().addTo(map);
+  const surfaceTrajLayer = L.layerGroup();  // off by default - Kevin: touchdowns + probability grid are enough, the raw ensemble lines look messy. Still toggleable in the layer control.
 
   const receptorLayer = L.layerGroup().addTo(map);
   const surfaceProbLayer = L.layerGroup().addTo(map);
   
   const stationLayerGroup = L.layerGroup().addTo(map);  // AQHI stations
   const purpleLayerGroup  = L.layerGroup().addTo(map);  // PurpleAir
-  const npriLayerGroup    = L.markerClusterGroup({ maxClusterRadius: 40 }).addTo(map);  // NPRI facilities
+  const npriLayerGroup    = L.layerGroup().addTo(map);  // NPRI facilities - Kevin prefers all dots visible, not clustered
 
   const baseMaps = {
     "OpenStreetMap": osmLayer
