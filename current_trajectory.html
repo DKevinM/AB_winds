@@ -459,17 +459,14 @@
     npriLayerGroup.clearLayers();
     if (!fc || !Array.isArray(fc.features)) return;
 
-    // NPRI.geojson carries 2-4 identical rows per facility (no
-    // substance-level field survives into this file, so the duplicate
-    // rows add nothing - see the AB_winds "off" investigation). Dedupe
-    // by facility name + location before rendering, on top of the
-    // clustering above.
+    // Live ECCC data is already one clean row per facility (NpriID is a
+    // real unique key) - dedup here is just a defensive safety net, not
+    // a real fix for anything, unlike when this read the stale static
+    // export.
     const seen = new Set();
     const deduped = fc.features.filter(f => {
-      const ll = getFeatureLatLon(f);
-      if (!ll) return false;
       const p = f.properties || {};
-      const key = `${p.FACILITY_NAME || p.FacilityName || p.facility || ""}__${ll.lat.toFixed(4)}__${ll.lon.toFixed(4)}`;
+      const key = p.NpriID ?? `${p.FacilityName || p.FACILITY_NAME || p.facility || ""}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -480,9 +477,9 @@
       if (!ll) return;
 
       const p   = f.properties || {};
-      const fac = p.FACILITY_NAME || p.FacilityName || p.facility || "Facility";
-      const co  = p.COMPANY_NAME  || p.Company      || p.company  || "";
-      const yr  = p.REPORTING_YEAR || p.ReportingYear || p.year || "";
+      const fac = p.FacilityName || p.FACILITY_NAME || p.facility || "Facility";
+      const co  = p.CompanyName  || p.COMPANY_NAME  || p.company  || "";
+      const yr  = p.ReportYear   || p.REPORTING_YEAR || p.year    || "";
       const label = co ? `${fac} (${co})` : fac;
 
       L.circleMarker([ll.lat, ll.lon], {
@@ -987,9 +984,34 @@ async function loadPurple() {
   return toPointFC(json);
 }
 
+// Live from ECCC's own NPRI ArcGIS service, not a static export - the
+// static file this used to read (AB_datapull/data/output/NPRI.geojson)
+// hadn't updated since 2026-07-18 and had 2-4 duplicate rows per facility
+// (a substance-level join with no substance field surviving into the
+// export). The live service is one clean row per facility, current-year,
+// and has more facilities (3266 AB vs 2378 in the stale file as of this
+// writing). Paginated because the server caps ~2000 records/request.
+const NPRI_BASE = "https://maps-cartes.ec.gc.ca/arcgis/rest/services/STB_DGST/NPRI/MapServer/0/query";
 async function loadNPRI() {
-  const res = await fetch("https://dkevinm.github.io/AB_datapull/data/output/NPRI.geojson");
-  const data = await res.json();
+  const fields = "FacilityName,CompanyName,ProvinceCode,ReportYear,NpriID,SectorDescriptionEn,City";
+  let allFeatures = [];
+  let offset = 0;
+  const pageSize = 2000;
+  while (true) {
+    const url = `${NPRI_BASE}?where=ProvinceCode%3D%27AB%27&outFields=${fields}&f=geojson&resultRecordCount=${pageSize}&resultOffset=${offset}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.error("NPRI live fetch failed:", res.status);
+      break;
+    }
+    const page = await res.json();
+    const feats = page.features || [];
+    allFeatures = allFeatures.concat(feats);
+    if (feats.length < pageSize) break;
+    offset += pageSize;
+  }
+  const data = { type: "FeatureCollection", features: allFeatures };
+  console.log("[NPRI] loaded live from ECCC:", allFeatures.length, "AB facilities");
   window.NPRI_FC = data;
   return data;
 }
@@ -1258,17 +1280,17 @@ map.on("click", async (e) => {
     const seen = new Set();
     
     npriHits.forEach(h => {
-      const name = h.feature.properties?.FACILITY_NAME;
+      const name = h.feature.properties?.FacilityName || h.feature.properties?.FACILITY_NAME;
       if (!seen.has(name)) {
         seen.add(name);
         uniqueNpri.push(h);
       }
     });
-    
+
     const npriLines = uniqueNpri.length
       ? uniqueNpri.slice(0,12).map(h => {
           const p   = h.feature.properties || {};
-          const fac = p.FACILITY_NAME || "Facility";
+          const fac = p.FacilityName || p.FACILITY_NAME || "Facility";
           return `${fac} (≈${h.dist_km.toFixed(1)} km away)`;
         }).join("<br>")
       : "None";
