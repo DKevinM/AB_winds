@@ -5,5 +5,6 @@
   "time_local": "2026-08-16T20:00",
   "hours": 5.0,
   "requested_at": "2026-08-29T03:55:20.912638+00:00",
-  "status": "pending"
+  "status": "completed",
+  "completed_at": "2026-08-29T04:02:36.427120+00:00"
 }
