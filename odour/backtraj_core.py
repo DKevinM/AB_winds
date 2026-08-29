@@ -674,6 +674,7 @@ def density_grid_to_geojson(cloud_points, cell_size_deg: float = 0.01, min_count
         i, j = cell_index(lat, lon)
         counts[(i, j)] += 1
 
+    total = len(cloud_points)
     feats = []
 
     for (i, j), count in counts.items():
@@ -685,9 +686,17 @@ def density_grid_to_geojson(cloud_points, cell_size_deg: float = 0.01, min_count
         lat0 = j * cell_size_deg
         lat1 = (j + 1) * cell_size_deg
 
+        # density_frac: this cell's share of total particle-time samples
+        # for the whole run - a residence-time fraction, invariant to
+        # particle count, run duration, or recording stride (same
+        # normalization convention as the DSAI PSCF/CWT climatology work).
+        # A raw count, unlike this, scales with those run settings and
+        # isn't comparable run-to-run.
+        density_frac = (count / total) if total > 0 else 0.0
+
         feats.append({
             "type": "Feature",
-            "properties": {"count": int(count)},
+            "properties": {"count": int(count), "density_frac": float(density_frac)},
             "geometry": {
                 "type": "Polygon",
                 "coordinates": [[

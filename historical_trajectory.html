@@ -63,19 +63,17 @@ const stationsLayer = L.layerGroup().addTo(map);
 const purpleLayer = L.layerGroup().addTo(map);
 const npriLayer = L.layerGroup().addTo(map);
   
-// Separate layer group per start height AND per line-vs-particles, so the
-// thin centerline isn't buried under that same height's particle cloud -
-// each can be switched on/off independently.
+// Separate layer group per start height for the centerline, so each
+// height can be switched on/off independently. Individual particle
+// positions are intentionally not rendered - the ensemble is represented
+// by the centerline (path) and the density grid (where the ensemble
+// spent its time), not by plotting every particle's position.
 const centerline10Layer = L.layerGroup().addTo(map);
 const centerline40Layer = L.layerGroup().addTo(map);
 const centerline80Layer = L.layerGroup().addTo(map);
-const cloud10Layer = L.layerGroup().addTo(map);
-const cloud40Layer = L.layerGroup().addTo(map);
-const cloud80Layer = L.layerGroup().addTo(map);
 const densityLayer = L.layerGroup().addTo(map);
 
 const CENTERLINE_LAYERS = { 10: centerline10Layer, 40: centerline40Layer, 80: centerline80Layer };
-const CLOUD_LAYERS = { 10: cloud10Layer, 40: cloud40Layer, 80: cloud80Layer };
 
 const overlayMaps = {
   "Stations": stationsLayer,
@@ -84,9 +82,6 @@ const overlayMaps = {
   "Trajectory 10m (line)": centerline10Layer,
   "Trajectory 40m (line)": centerline40Layer,
   "Trajectory 80m (line)": centerline80Layer,
-  "Trajectory 10m (particles)": cloud10Layer,
-  "Trajectory 40m (particles)": cloud40Layer,
-  "Trajectory 80m (particles)": cloud80Layer,
   "Back Trajectory Density": densityLayer
 };
 
@@ -325,16 +320,14 @@ async function checkForNewOutput() {
 // ----------------------------
 async function loadTrajectories() {
 
-  const [centerRes, cloudRes, densityRes] = await Promise.all([
+  const [centerRes, densityRes] = await Promise.all([
     fetch("odour_data/backtraj_centerlines.geojson?t=" + Date.now()),
-    fetch("odour_data/backtraj_cloud.geojson?t=" + Date.now()),
     fetch("odour_data/backtraj_density.geojson?t=" + Date.now())
   ]);
 
-  if (!centerRes.ok || !cloudRes.ok || !densityRes.ok) return false;
+  if (!centerRes.ok || !densityRes.ok) return false;
 
   const centerGeo = await centerRes.json();
-  const cloudGeo = await cloudRes.json();
   const densityGeo = await densityRes.json();
 
   // GitHub Pages' CDN has multiple edge nodes; the HEAD request in
@@ -359,12 +352,10 @@ async function loadTrajectories() {
   }
 
   Object.values(CENTERLINE_LAYERS).forEach(l => l.clearLayers());
-  Object.values(CLOUD_LAYERS).forEach(l => l.clearLayers());
   densityLayer.clearLayers();
 
-  // CENTERLINE + CLOUD, split per start height AND kept in separate
-  // layers from each other - the thin line was getting visually buried
-  // under that height's own dense particle cloud when they shared a layer.
+  // CENTERLINE, split per start height so each can be switched on/off
+  // independently.
   [10, 40, 80].forEach(z0 => {
 
     L.geoJSON(centerGeo, {
@@ -376,38 +367,29 @@ async function loadTrajectories() {
         });
       }
     }).addTo(CENTERLINE_LAYERS[z0]);
-
-    L.geoJSON(cloudGeo, {
-      filter: feature => Math.round(feature.properties?.z0_m) === z0,
-      pointToLayer: (f, latlng) =>
-        L.circleMarker(latlng, {
-          radius: 3,
-          fillColor: colorForHeight(z0),
-          color: "#111",
-          weight: 0.5,
-          fillOpacity: 0.6
-        }),
-      onEachFeature: (feature, layer) => {
-        const t = feature.properties?.t ?? "NA";
-        const z = feature.properties?.z_m ?? "NA";
-        layer.bindTooltip(`Particle<br>Start height: ${z0} m<br>Time: ${t}<br>Current height: ${z} m`, {
-          sticky: true
-        });
-      }
-    }).addTo(CLOUD_LAYERS[z0]);
   });
 
-  // DENSITY
+  // DENSITY - density_frac is each cell's share of total particle-time
+  // samples for the whole run (invariant to particle count/duration/
+  // recording stride, unlike a raw count). Opacity is scaled relative to
+  // the busiest cell in *this* run so the map always reads as a clean
+  // heatmap regardless of run settings, while density_frac itself stays
+  // comparable across different runs.
+  const maxDensityFrac = Math.max(
+    0.000001,
+    ...densityGeo.features.map(f => f.properties?.density_frac ?? 0)
+  );
+
   L.geoJSON(densityGeo, {
     style: f => ({
       color: "#333",
       weight: 0.3,
       fillColor: "#ff7f00",
-      fillOpacity: Math.min(0.6, (f.properties.count || 0) / 50)
+      fillOpacity: 0.8 * (f.properties.density_frac ?? 0) / maxDensityFrac
     }),
     onEachFeature: (feature, layer) => {
-      const count = feature.properties?.count ?? 0;
-      layer.bindTooltip(`Trajectory density<br>Count: ${count}`, {
+      const pct = ((feature.properties?.density_frac ?? 0) * 100).toFixed(2);
+      layer.bindTooltip(`Trajectory density<br>${pct}% of ensemble time`, {
         sticky: true
       });
     }
