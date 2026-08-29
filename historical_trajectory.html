@@ -71,7 +71,9 @@ const npriLayer = L.layerGroup().addTo(map);
 const centerline10Layer = L.layerGroup().addTo(map);
 const centerline40Layer = L.layerGroup().addTo(map);
 const centerline80Layer = L.layerGroup().addTo(map);
-const densityLayer = L.layerGroup().addTo(map);
+// Off by default while trying a thicker centerline instead - still
+// toggleable via the layer control for comparison.
+const densityLayer = L.layerGroup();
 
 const CENTERLINE_LAYERS = { 10: centerline10Layer, 40: centerline40Layer, 80: centerline80Layer };
 
@@ -360,7 +362,7 @@ async function loadTrajectories() {
 
     L.geoJSON(centerGeo, {
       filter: feature => Math.round(feature.properties?.z0_m) === z0,
-      style: { color: colorForHeight(z0), weight: 2 },
+      style: { color: colorForHeight(z0), weight: 5, opacity: 0.85 },
       onEachFeature: (feature, layer) => {
         layer.bindTooltip(`Back trajectory<br>Start height: ${z0} m`, {
           sticky: true
