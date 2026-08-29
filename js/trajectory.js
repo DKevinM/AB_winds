@@ -96,13 +96,22 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 // Find nearby features
 function findFeaturesNearTrajectory(trajPoints, fc, maxDistKm = 5) {
   if (!fc?.features) return [];
+  if (!trajPoints || trajPoints.length === 0) return [];
+
+  const [vLat, vLon] = trajPoints[0]; // start point = the venue
 
   return fc.features
     .map(f => {
       const [lon, lat] = f.geometry.coordinates;
-      let min = Infinity;
+      const distFromVenue = haversineKm(lat, lon, vLat, vLon);
 
+      // Only compare against points that have travelled at least as far from
+      // the venue as this feature sits - otherwise a feature merely near the
+      // venue (in any direction, including the opposite way from where the
+      // trajectory heads) trivially matches the path's own starting point.
+      let min = Infinity;
       for (const [tLat, tLon] of trajPoints) {
+        if (haversineKm(vLat, vLon, tLat, tLon) < distFromVenue) continue;
         const d = haversineKm(lat, lon, tLat, tLon);
         if (d < min) min = d;
       }

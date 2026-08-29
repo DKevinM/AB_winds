@@ -2,6 +2,7 @@ import os
 import re
 import json
 import gzip
+import logging
 import math
 import datetime as dt
 from dataclasses import dataclass
@@ -14,6 +15,8 @@ from supabase import create_client
 import rasterio
 
 
+
+logger = logging.getLogger(__name__)
 
 EARTH_R = 6371000.0  # meters
 
@@ -86,18 +89,36 @@ class RasterDEM(DEM):
         self.slope = rasterio.open(slope_path)
         self.slope_band = self.slope.read(1)
 
+        self._warned_oob = False
+
+    def _warn_oob_once(self, lat: float, lon: float, exc: Exception) -> None:
+        # Logged once per instance, not per call - a trajectory drifting past
+        # raster coverage can hit this thousands of times in one run, and the
+        # point is to surface that terrain steering silently went flat, not
+        # to flood the log.
+        if not self._warned_oob:
+            logger.warning(
+                "RasterDEM: point outside raster coverage (first at lat=%.4f, "
+                "lon=%.4f: %s) - elevation/slope falling back to 0.0 for this "
+                "and any further out-of-bounds points this run",
+                lat, lon, exc,
+            )
+            self._warned_oob = True
+
     def get_elevation(self, lat: float, lon: float) -> float:
         try:
             row, col = self.dem.index(lon, lat)
             return float(self.dem_band[row, col])
-        except:
+        except (IndexError, ValueError) as exc:
+            self._warn_oob_once(lat, lon, exc)
             return 0.0
 
     def get_slope(self, lat: float, lon: float) -> float:
         try:
             row, col = self.slope.index(lon, lat)
             return float(self.slope_band[row, col])
-        except:
+        except (IndexError, ValueError) as exc:
+            self._warn_oob_once(lat, lon, exc)
             return 0.0
 
 
@@ -382,11 +403,15 @@ class MetStoreV2:
         s0, s1, a = self._bracket(t)
         g = s0.grid
 
-        layers = np.array([10, 40, 80, 120], dtype=float)
-        zpick = int(layers[np.argmin(np.abs(layers - z_m))])
+        layers = (10.0, 40.0, 80.0, 120.0)
+        z_clamped = clamp(z_m, layers[0], layers[-1])
 
-        ukey = f"u{zpick}"
-        vkey = f"v{zpick}"
+        z_lo, z_hi = layers[0], layers[-1]
+        for lo, hi in zip(layers[:-1], layers[1:]):
+            if lo <= z_clamped <= hi:
+                z_lo, z_hi = lo, hi
+                break
+        fz = 0.0 if z_hi == z_lo else (z_clamped - z_lo) / (z_hi - z_lo)
 
         def interp(key: str) -> Optional[float]:
             if key not in s0.fields or key not in s1.fields:
@@ -395,17 +420,25 @@ class MetStoreV2:
             v1 = self._bilinear(g, s1.fields[key], lat, lon)
             return v0 * (1 - a) + v1 * a
 
-        u = interp(ukey)
-        v = interp(vkey)
+        def interp_layer(prefix: str) -> Optional[float]:
+            v_lo = interp(f"{prefix}{int(z_lo)}")
+            v_hi = interp(f"{prefix}{int(z_hi)}")
+            if v_lo is None or v_hi is None:
+                return None
+            return v_lo * (1 - fz) + v_hi * fz
+
+        u = interp_layer("u")
+        v = interp_layer("v")
         hpbl = interp("hpbl")
 
         if u is None or v is None:
-            raise KeyError(f"Missing winds: need {ukey} and {vkey}")
+            raise KeyError(f"Missing winds near z={z_m}m (layers {int(z_lo)}-{int(z_hi)})")
 
         out = {
             "u": float(u),
             "v": float(v),
-            "zlayer": float(zpick),
+            "zlayer_lo": float(z_lo),
+            "zlayer_hi": float(z_hi),
         }
         if hpbl is not None and np.isfinite(hpbl):
             out["hpbl"] = float(hpbl)
