@@ -20,6 +20,17 @@ logger = logging.getLogger(__name__)
 
 EARTH_R = 6371000.0  # meters
 
+# Reference vertical wind shear (s^-1, from MetStoreV2.sample()'s "shear" =
+# |wind(z_hi) - wind(z_lo)| / (z_hi - z_lo)) used to scale turbulence
+# intensity: turbulence grows with mechanical shear and shrinks in calm,
+# well-mixed layers, instead of using a flat constant regardless of actual
+# conditions. Starting estimate, not empirically calibrated - validate
+# against a real case (e.g. the July 18 event) before trusting the
+# absolute spread, same as the DSAI HYSPLIT setup was.
+SHEAR_REF_S_INV = 0.05
+SHEAR_FACTOR_MIN = 0.5
+SHEAR_FACTOR_MAX = 2.0
+
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
@@ -167,7 +178,18 @@ def terrain_spread_factor(start_elev: float, current_elev: float) -> float:
     if diff > 50.0:
         return 0.7   # ridge suppression
     return 1.0
-    
+
+
+def shear_turbulence_factor(shear_s_inv: float) -> float:
+    """Scale turbulence intensity by real vertical wind shear instead of a
+    flat constant: stronger shear between the bracketing height layers
+    means more mechanical turbulence, weak/no shear means a calmer,
+    well-mixed layer."""
+    if shear_s_inv <= 0.0:
+        return SHEAR_FACTOR_MIN
+    return clamp(shear_s_inv / SHEAR_REF_S_INV, SHEAR_FACTOR_MIN, SHEAR_FACTOR_MAX)
+
+
 
 # ---------------------------
 # Data model
@@ -420,25 +442,25 @@ class MetStoreV2:
             v1 = self._bilinear(g, s1.fields[key], lat, lon)
             return v0 * (1 - a) + v1 * a
 
-        def interp_layer(prefix: str) -> Optional[float]:
-            v_lo = interp(f"{prefix}{int(z_lo)}")
-            v_hi = interp(f"{prefix}{int(z_hi)}")
-            if v_lo is None or v_hi is None:
-                return None
-            return v_lo * (1 - fz) + v_hi * fz
-
-        u = interp_layer("u")
-        v = interp_layer("v")
+        u_lo, u_hi = interp(f"u{int(z_lo)}"), interp(f"u{int(z_hi)}")
+        v_lo, v_hi = interp(f"v{int(z_lo)}"), interp(f"v{int(z_hi)}")
         hpbl = interp("hpbl")
 
-        if u is None or v is None:
+        if u_lo is None or u_hi is None or v_lo is None or v_hi is None:
             raise KeyError(f"Missing winds near z={z_m}m (layers {int(z_lo)}-{int(z_hi)})")
+
+        u = u_lo * (1 - fz) + u_hi * fz
+        v = v_lo * (1 - fz) + v_hi * fz
+
+        dz = z_hi - z_lo
+        shear = math.sqrt((u_hi - u_lo) ** 2 + (v_hi - v_lo) ** 2) / dz if dz > 0 else 0.0
 
         out = {
             "u": float(u),
             "v": float(v),
             "zlayer_lo": float(z_lo),
             "zlayer_hi": float(z_hi),
+            "shear": float(shear),  # magnitude of d(wind)/dz between the bracketing layers, s^-1
         }
         if hpbl is not None and np.isfinite(hpbl):
             out["hpbl"] = float(hpbl)
@@ -556,9 +578,10 @@ def run_back_trajectories(
                 z_asl = terrain_now + p.z_m
                 m1 = met.sample(t, p.lat, p.lon, z_asl)
 
+                shear_factor = shear_turbulence_factor(m1.get("shear", 0.0))
 
-                sigma_h = horiz_sigma_ms * math.sqrt(dt_s / 60.0) * spread_factor
-                
+                sigma_h = horiz_sigma_ms * math.sqrt(dt_s / 60.0) * spread_factor * shear_factor
+
                 p.u_turb = alpha * p.u_turb + rng.normal(0, sigma_h)
                 p.v_turb = alpha * p.v_turb + rng.normal(0, sigma_h)
                 
@@ -593,7 +616,7 @@ def run_back_trajectories(
 
                 lat_new, lon_new = advect_latlon(p.lat, p.lon, u2, v2, dt_s)
 
-                z_new = p.z_m + rng.normal(0.0, vert_sigma_ms * math.sqrt(dt_s) * spread_factor)
+                z_new = p.z_m + rng.normal(0.0, vert_sigma_ms * math.sqrt(dt_s) * spread_factor * shear_factor)
 
                 if use_pbl_cap and "hpbl" in m2 and np.isfinite(m2["hpbl"]):
                     hpbl = max(20.0, float(m2["hpbl"]))
