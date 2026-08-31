@@ -59,6 +59,13 @@ fi
   flock -w 120 200
 
   git add odour_data/*.geojson trigger_request.json
+  # Conditional: a run that fails before this write step (or an older run)
+  # won't have the file, and set -e would otherwise abort this whole block
+  # (including the trigger_request.json status push) on git add's missing-
+  # pathspec error.
+  if [ -f odour_data/backtraj_windseries.json ]; then
+    git add odour_data/backtraj_windseries.json
+  fi
 
   if git diff --cached --quiet; then
       echo "No changes to commit."
