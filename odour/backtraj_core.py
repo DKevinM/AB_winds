@@ -800,9 +800,12 @@ if __name__ == "__main__":
     # Wind-rose export for the frontend widget - reuses the same `met`
     # instance already loaded for the trajectory run, no extra fetch.
     # Newest-first (index 0 = start_time), matching getWindSeries()'s shape
-    # on current_trajectory.html so both pages share buildWindRose().
+    # on current_trajectory.html so both pages share buildWindRose(). Spans
+    # the same number of hours this trajectory actually ran for (not a
+    # fixed window) - samples past met's window_hours=6 load window come
+    # back None from wind_from_at and are skipped, same as any other gap.
     windseries = []
-    for i in range(4):
+    for i in range(int(hours)):
         t = start_time - dt.timedelta(hours=i)
         sample = wind_from_at(met, lat, lon, t)
         if sample is None:
