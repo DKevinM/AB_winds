@@ -362,7 +362,7 @@ async function loadTrajectories() {
 
     L.geoJSON(centerGeo, {
       filter: feature => Math.round(feature.properties?.z0_m) === z0,
-      style: { color: colorForHeight(z0), weight: 5, opacity: 0.85 },
+      style: { color: colorForHeight(z0), weight: 9, opacity: 0.7 },
       onEachFeature: (feature, layer) => {
         layer.bindTooltip(`Back trajectory<br>Start height: ${z0} m`, {
           sticky: true
