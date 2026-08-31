@@ -953,7 +953,7 @@ async function getWindSeries(lat, lng, timeISO, steps = 3) {
   const winds = [];
 
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/wind_files?valid_time=lte.${timeISO.replace("+00:00","Z")}&order=valid_time.desc&limit=${steps * 3}`,
+    `${SUPABASE_URL}/rest/v1/wind_files?valid_time=lte.${timeISO.replace("+00:00","Z")}&order=valid_time.desc&limit=${steps * 6}`,
     {
       headers: {
         apikey: API_KEY,
@@ -966,7 +966,14 @@ async function getWindSeries(lat, lng, timeISO, steps = 3) {
   
   const rows = await res.json();
   const seenTimes = new Set();
-  for (const row of rows.slice(0, steps)) {
+  // HRDPS files in this table land every 3h, but multiple overlapping
+  // forecast runs (f003/f006/f009/...) can share the same valid_time -
+  // slicing to the first `steps` raw rows before dedup was burning most
+  // of that 3x buffer on duplicate timestamps instead of reaching further
+  // back, so a request for 6 hours was often only returning 2-4. Walk the
+  // full buffer and stop once `steps` unique valid_times are collected.
+  for (const row of rows) {
+    if (winds.length >= steps) break;
     const valid = row.valid_time;
     if (seenTimes.has(valid)) continue;
     seenTimes.add(valid);
@@ -1333,7 +1340,7 @@ map.on("click", async (e) => {
 
     
     const popupHtml = `
-      <b>Back-trajectory (~4 hours)</b><br/>
+      <b>Back-trajectory (~${winds3h.length} hour${winds3h.length === 1 ? "" : "s"})</b><br/>
       Wind-from: ${
         winds3h[0]
           ? winds3h[0].wd.toFixed(0) + "° at " + winds3h[0].ws.toFixed(1) + " m/s"
