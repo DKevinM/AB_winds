@@ -976,9 +976,13 @@ async function getWindSeries(lat, lng, timeISO, steps = 3) {
       const w = extractWindAtPoint(data, lat, lng);
       if (!w) continue;
 
+      // extractWindAtPoint's wd is direction of motion (ugrd10/vgrd10 raw),
+      // not meteorological "coming from" - trajectory.js's stepBackOneSegment
+      // explicitly expects "coming-from" (see js/trajectory.js), and
+      // historical_trajectory_rapid.html already flips the same way.
       winds.push({
         ws: w.ws,
-        wd: w.wd,
+        wd: (w.wd + 180) % 360,
         hours: 1
       });
 
@@ -1200,12 +1204,16 @@ map.on("click", async (e) => {
     // 3) Extract wind at clicked point
     // ─────────────────────────────────────────
     const w = extractWindAtPoint(data, lat, lng);
-    
+
     if (!w) {
       console.warn("No wind at location:", lat, lng);
       alert("No wind data at this location");
       return;
     }
+
+    // Same "coming-from" fix as getWindSeries() above - w.wd here is raw
+    // direction-of-motion until flipped.
+    w.wd = (w.wd + 180) % 360;
     
     console.log("Wind:", w);
     
