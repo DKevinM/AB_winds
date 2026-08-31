@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="odour/data.js"></script>
+  <script src="js/windrose.js"></script>
 
   <style>
     body { margin: 0; font-family: Arial; background: #111; color: #eee; }
@@ -23,6 +24,20 @@
       padding: 6px;
       font-size: 14px;
     }
+
+    #windRosePanel {
+      display: none;
+      position: absolute;
+      bottom: 20px;
+      right: 10px;
+      z-index: 1000;
+      background: rgba(20,20,20,0.85);
+      color: #eee;
+      padding: 8px 10px 6px;
+      border-radius: 8px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.4);
+    }
+    #windRosePanel.active { display: block; }
   </style>
 </head>
 
@@ -42,6 +57,7 @@
 </div>
 
 <div id="map"></div>
+<div id="windRosePanel"></div>
 
 <script>
 
@@ -322,9 +338,10 @@ async function checkForNewOutput() {
 // ----------------------------
 async function loadTrajectories() {
 
-  const [centerRes, densityRes] = await Promise.all([
+  const [centerRes, densityRes, windRes] = await Promise.all([
     fetch("odour_data/backtraj_centerlines.geojson?t=" + Date.now()),
-    fetch("odour_data/backtraj_density.geojson?t=" + Date.now())
+    fetch("odour_data/backtraj_density.geojson?t=" + Date.now()),
+    fetch("odour_data/backtraj_windseries.json?t=" + Date.now())
   ]);
 
   if (!centerRes.ok || !densityRes.ok) return false;
@@ -350,6 +367,18 @@ async function loadTrajectories() {
     const drift = Math.hypot(startLat - selectedPoint.lat, startLon - selectedPoint.lng);
     if (drift > 0.01) {
       return false;
+    }
+  }
+
+  // Non-fatal: older runs (before this feature shipped) won't have this
+  // file, and a missing wind rose shouldn't block the trajectory itself.
+  if (windRes.ok) {
+    try {
+      const windSeries = await windRes.json();
+      buildWindRose("windRosePanel", windSeries);
+      document.getElementById("windRosePanel").classList.add("active");
+    } catch (err) {
+      console.warn("Wind rose data unavailable", err);
     }
   }
 

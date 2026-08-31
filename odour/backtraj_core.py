@@ -80,6 +80,19 @@ def dir_speed_to_uv(direction_deg: float, speed: float) -> Tuple[float, float]:
     return u, v
 
 
+def wind_from_at(met, lat: float, lon: float, t: "dt.datetime", z_m: float = 10.0) -> Optional[Tuple[float, float]]:
+    """Meteorological wind direction (degrees the wind is blowing FROM) and
+    speed at a point/time, for the frontend wind-rose widget. uv_to_dir_speed
+    gives direction of motion (where the air is headed), which is the
+    opposite compass bearing from the conventional "wind FROM" reading."""
+    try:
+        s = met.sample(t, lat, lon, z_m)
+    except KeyError:
+        return None
+    motion_dir, speed = uv_to_dir_speed(s["u"], s["v"])
+    wd_from = (motion_dir + 180.0) % 360.0
+    return wd_from, speed
+
 
 
 
@@ -783,5 +796,21 @@ if __name__ == "__main__":
 
     with open(outdir / "backtraj_density.geojson", "w", encoding="utf-8") as f:
         json.dump(density_gj, f)
+
+    # Wind-rose export for the frontend widget - reuses the same `met`
+    # instance already loaded for the trajectory run, no extra fetch.
+    # Newest-first (index 0 = start_time), matching getWindSeries()'s shape
+    # on current_trajectory.html so both pages share buildWindRose().
+    windseries = []
+    for i in range(4):
+        t = start_time - dt.timedelta(hours=i)
+        sample = wind_from_at(met, lat, lon, t)
+        if sample is None:
+            continue
+        wd_from, speed = sample
+        windseries.append({"ws": round(speed, 2), "wd": round(wd_from, 1), "hours": 1})
+
+    with open(outdir / "backtraj_windseries.json", "w", encoding="utf-8") as f:
+        json.dump(windseries, f)
 
     print("Model run complete for:", lat, lon, start_time, "hours:", hours)

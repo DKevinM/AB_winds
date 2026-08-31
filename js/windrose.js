@@ -68,9 +68,11 @@
     const n = windSeries.length;
     const color = "#2c7fb8"; // matches the trajectory line's own blue
 
+    // currentColor + opacity (not fixed grays) so this renders correctly
+    // whether it's dropped into a light panel or a dark one.
     const rings = [1, 2, 3].map((f) => {
       const r = (MAX_RADIUS * f) / 3;
-      return `<circle cx="${CENTER}" cy="${CENTER}" r="${r}" fill="none" stroke="#ccc" stroke-width="1" />`;
+      return `<circle cx="${CENTER}" cy="${CENTER}" r="${r}" fill="none" stroke="currentColor" stroke-opacity="0.25" stroke-width="1" />`;
     }).join("");
 
     const cardinals = [
@@ -81,7 +83,7 @@
     ].map(({ label, bearing }) => {
       const p = polarToXY(bearing, MAX_RADIUS + 12);
       return `<text x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}" text-anchor="middle"
-                dominant-baseline="middle" font-size="11" font-weight="700" fill="#555">${label}</text>`;
+                dominant-baseline="middle" font-size="11" font-weight="700" fill="currentColor" fill-opacity="0.7">${label}</text>`;
     }).join("");
 
     const arrows = windSeries.map((w, i) => {
@@ -94,17 +96,17 @@
     const caption = `Wind FROM ${Math.round(latest.wd)}° at ${latest.ws.toFixed(1)} m/s (now)`;
 
     el.innerHTML = `
-      <svg width="${SIZE}" height="${SIZE}" viewBox="0 0 ${SIZE} ${SIZE}">
+      <svg width="${SIZE}" height="${SIZE}" viewBox="0 0 ${SIZE} ${SIZE}" style="color:inherit;">
         ${rings}
-        <circle cx="${CENTER}" cy="${CENTER}" r="${MAX_RADIUS}" fill="none" stroke="#999" stroke-width="1.5" />
+        <circle cx="${CENTER}" cy="${CENTER}" r="${MAX_RADIUS}" fill="none" stroke="currentColor" stroke-opacity="0.45" stroke-width="1.5" />
         ${cardinals}
         ${arrows}
-        <circle cx="${CENTER}" cy="${CENTER}" r="3" fill="#333" />
+        <circle cx="${CENTER}" cy="${CENTER}" r="3" fill="currentColor" />
       </svg>
-      <div style="font-size:11px;color:#333;text-align:center;margin-top:2px;font-weight:600;">
+      <div style="font-size:11px;opacity:0.9;text-align:center;margin-top:2px;font-weight:600;">
         ${caption}
       </div>
-      <div style="font-size:10px;color:#888;text-align:center;">
+      <div style="font-size:10px;opacity:0.65;text-align:center;">
         last ${n}h &middot; newest = solid, oldest = faint
       </div>
     `;

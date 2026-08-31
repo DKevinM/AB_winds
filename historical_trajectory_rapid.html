@@ -12,12 +12,13 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
   <script src="js/wind_fetch.js"></script>
   <script src="js/trajectory.js"></script>
+  <script src="js/windrose.js"></script>
 
-  
+
 
   <style>
     body { margin: 0; font-family: Arial; background: #111; color: #eee; }
-    #map { height: 80vh; }
+    #map { height: 80vh; position: relative; }
     #panel {
       padding: 10px;
       background: #1b1b1b;
@@ -30,6 +31,20 @@
       font-size: 14px;
     }
     button { cursor: pointer; }
+
+    #windRosePanel {
+      display: none;
+      position: absolute;
+      bottom: 20px;
+      right: 10px;
+      z-index: 1000;
+      background: rgba(20,20,20,0.85);
+      color: #eee;
+      padding: 8px 10px 6px;
+      border-radius: 8px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.4);
+    }
+    #windRosePanel.active { display: block; }
   </style>
 </head>
 
@@ -47,7 +62,8 @@
 </div>
 
 <div id="map"></div>
-  
+<div id="windRosePanel"></div>
+
 
 
 
@@ -456,6 +472,9 @@ async function runModel() {
     document.getElementById("status").innerText = "No wind data found";
     return;
   }
+
+  buildWindRose("windRosePanel", winds);
+  document.getElementById("windRosePanel").classList.add("active");
 
   document.getElementById("status").innerText = "Computing trajectory...";
 
