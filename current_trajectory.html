@@ -9,6 +9,7 @@
   
   <script src="js/wind_fetch.js"></script>
   <script src="js/trajectory.js"></script>
+  <script src="js/windrose.js"></script>
   <script src="odour/data.js"></script>
   
   <!-- Leaflet CSS -->
@@ -70,6 +71,19 @@
       animation: computing-spin 0.8s linear infinite;
     }
     @keyframes computing-spin { to { transform: rotate(360deg); } }
+
+    #windRosePanel {
+      display: none;
+      position: absolute;
+      bottom: 20px;
+      right: 10px;
+      z-index: 1000;
+      background: rgba(255,255,255,0.92);
+      padding: 8px 10px 6px;
+      border-radius: 8px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.2);
+    }
+    #windRosePanel.active { display: block; }
   </style>
 </head>
 <body>
@@ -80,6 +94,7 @@
   Wind comes from HRDPS (High Resolution Deterministic Prediction System, MSS, ECCC)
 </div>
 <div id="computingIndicator"><span class="spinner"></span><span id="computingIndicatorText">Computing back-trajectory…</span></div>
+<div id="windRosePanel"></div>
 
 
     
@@ -1204,7 +1219,8 @@ map.on("click", async (e) => {
       winds3h.push({ ws: w.ws, wd: w.wd, hours: 1 });
     }
 
-
+    buildWindRose("windRosePanel", winds3h);
+    document.getElementById("windRosePanel").classList.add("active");
 
     // 3) Ensemble trajectories + footprint ("bubbles")
     setComputingStatus("Computing 25-member trajectory ensemble…");
