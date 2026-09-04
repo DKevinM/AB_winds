@@ -14,9 +14,10 @@ import os
 import datetime as dt
 from supabase import create_client
 
-from stations import WATCH_STATIONS, PARAMETERS
+from stations import STATIONS, WATCH_STATIONS, PARAMETERS
 from climatology import load_cache, cache_key, check_exceedance
 from run_hysplit import run_ensemble
+from fire_hotspots import check_hotspots
 
 TRIGGERED_LOG_PATH = "/opt/airquality/dsai_data/triggered_events.json"
 
@@ -87,6 +88,22 @@ def main():
                     print(f"  HYSPLIT ensemble triggered for {station} @ {cur_ts}")
                 except Exception as ex:
                     print(f"  HYSPLIT run failed: {ex}")
+
+                lat, lon = STATIONS[station]
+                fire = check_hotspots(lat, lon)
+                if fire["status"] == "ok" and fire["count"]:
+                    near = fire["nearest"]
+                    print(
+                        f"  FIRE CONTEXT: {fire['count']} hotspot cluster(s) within 150km - "
+                        f"nearest {near['distance_km']}km {near['direction']} "
+                        f"(FRP {near['frp']}, {near['acq_date']} {near['acq_time']} {near['daynight']})"
+                    )
+                elif fire["status"] == "ok":
+                    print("  FIRE CONTEXT: no active-fire hotspots within 150km")
+                elif fire["status"] == "missing":
+                    print("  FIRE CONTEXT: skipped (FIRMS_API_KEY not set)")
+                else:
+                    print(f"  FIRE CONTEXT: check failed - {fire.get('error')}")
 
                 triggered.add(event_id)
                 new_triggers += 1
