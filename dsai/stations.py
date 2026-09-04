@@ -60,8 +60,9 @@ STATIONS = {
     # memory). Left out of STATIONS/WATCH_STATIONS until real data
     # flows; add coordinates here once they do.
 
-    # Poacher's Landing Station 2: ACA station, but only TRS/WS/WD/BP -
-    # no SO2/H2S channel, so nothing for this watch to check yet.
+    # Poacher's Landing Station 2: ACA station, TRS only (no SO2/H2S) -
+    # now watched since TRS was added below.
+    "Poacher’s Landing Station 2": (54.9457874, -112.816501),
 }
 
 # The actual hourly exceedance-watch list. check_exceedances.py and
@@ -113,6 +114,9 @@ WATCH_STATIONS = [
     "Fox Creek",
     "Happy Valley",
     "Smoky Heights",
+
+    # TRS-only (no SO2/H2S) - watched because of TRS below
+    "Poacher’s Landing Station 2",
 ]
 
 # Pollutants we have a proven, meaningful story for (refinery/sour-gas
@@ -121,4 +125,5 @@ WATCH_STATIONS = [
 PARAMETERS = [
     "Hydrogen Sulphide",
     "Sulphur Dioxide",
+    "Total Reduced Sulphur",
 ]
