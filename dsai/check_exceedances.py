@@ -18,6 +18,7 @@ from stations import STATIONS, WATCH_STATIONS, PARAMETERS
 from climatology import load_cache, cache_key, check_exceedance
 from run_hysplit import run_ensemble
 from fire_hotspots import check_hotspots
+from receptors import load_receptors, receptors_downwind
 
 TRIGGERED_LOG_PATH = "/opt/airquality/dsai_data/triggered_events.json"
 
@@ -50,10 +51,26 @@ def fetch_latest_two(sb, station, parameter):
     return rows
 
 
+def fetch_latest_wind_direction(sb, station):
+    res = (
+        sb.table("aqhi_data")
+        .select("Value")
+        .eq("StationName", station)
+        .eq("ParameterName", "Wind Direction")
+        .order("ReadingDate", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not res.data or res.data[0]["Value"] is None:
+        return None
+    return float(res.data[0]["Value"])
+
+
 def main():
     sb = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
     cache = load_cache()
     triggered = load_triggered_log()
+    receptors = load_receptors()
 
     if not cache:
         print("No climatology cache found - run build_climatology_cache.py first.")
@@ -104,6 +121,18 @@ def main():
                     print("  FIRE CONTEXT: skipped (FIRMS_API_KEY not set)")
                 else:
                     print(f"  FIRE CONTEXT: check failed - {fire.get('error')}")
+
+                if receptors:
+                    wind_from = fetch_latest_wind_direction(sb, station)
+                    if wind_from is not None:
+                        downwind = receptors_downwind(lat, lon, wind_from, receptors, max_distance_km=30)
+                        if downwind:
+                            names = ", ".join(f"{r['name']} ({r['type']}, {r['distance_km']}km)" for r in downwind[:5])
+                            print(f"  DOWNWIND RECEPTORS: {len(downwind)} within 30km - {names}")
+                        else:
+                            print("  DOWNWIND RECEPTORS: none within 30km")
+                    else:
+                        print("  DOWNWIND RECEPTORS: skipped (no wind direction reading)")
 
                 triggered.add(event_id)
                 new_triggers += 1
