@@ -71,12 +71,16 @@ STATIONS = {
 # July 18 2026 propagation check; expanded 2026-09-04 to the full
 # ACA/WCAS/PAZA roster (stations with SO2/H2S data - see the STATIONS
 # dict above for the ones left out and why). Deliberately NOT
-# network-wide (86 AB stations) and NOT extended to PM2.5 yet - a
-# wildfire smoke episode would trip the percentile threshold at most
-# stations simultaneously and re-trigger every hour it stays elevated,
-# which is a regional-transport problem this per-station/per-timestamp
-# trigger isn't built to collapse. Revisit with a regional-simultaneity
-# guard before adding PM2.5 or going network-wide.
+# network-wide (86 AB stations) yet - that's still a bigger step than
+# this corridor-plus-networks scope.
+#
+# PM2.5 added 2026-09-07 WITH a regional-simultaneity guard in
+# check_exceedances.py (REGIONAL_PM25_THRESHOLD) - more than 5 stations
+# tripping PM2.5 in the same run collapses into one consolidated log
+# line instead of firing HYSPLIT/receptor checks for each one. Without
+# that guard this would've been a flood of near-duplicate runs during
+# every wildfire smoke episode - see the note this replaced, and
+# project_dsai_hysplit memory for the full reasoning.
 WATCH_STATIONS = [
     "Edmonton East",
     "Elk Island",
@@ -126,4 +130,5 @@ PARAMETERS = [
     "Hydrogen Sulphide",
     "Sulphur Dioxide",
     "Total Reduced Sulphur",
+    "Fine Particulate Matter",
 ]
