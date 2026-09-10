@@ -61,20 +61,31 @@ def build_climatology(series):
     }
 
 
+def _tie_aware_rank(sorted_vals, x):
+    """Percentile rank with mean-rank tie handling: ties with x count as
+    half in, half out, rather than fully "below" (a plain <= comparison).
+    Matters for censored/zero-floor pollutants like SO2 and Total Reduced
+    Sulphur, which sit at exactly 0.0 for most of their history - a plain
+    "count <= x" rank would put that same, unremarkable 0.0 reading at or
+    above the 95th percentile purely because it ties with most of history,
+    flagging the pollutant's normal resting state as an exceedance."""
+    below = sum(1 for v in sorted_vals if v < x)
+    equal = sum(1 for v in sorted_vals if v == x)
+    return 100.0 * (below + 0.5 * equal) / len(sorted_vals)
+
+
 def value_percentile_rank(clim, value):
     sv = clim["values_sorted"]
     if not sv:
         return None
-    below = sum(1 for v in sv if v <= value)
-    return 100.0 * below / len(sv)
+    return _tie_aware_rank(sv, value)
 
 
 def delta_percentile_rank(clim, delta):
     sd = clim["deltas_sorted"]
     if not sd:
         return None
-    below = sum(1 for d in sd if d <= delta)
-    return 100.0 * below / len(sd)
+    return _tie_aware_rank(sd, delta)
 
 
 def check_exceedance(clim, current_value, current_delta, abs_pct_threshold=95, roc_pct_threshold=95):
