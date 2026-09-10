@@ -19,6 +19,7 @@
 # no schedule this needs to follow.
 
 import json
+import math
 import os
 import time
 
@@ -54,6 +55,56 @@ def receptor_type(tags):
 
 
 HEADERS = {"User-Agent": "KRM-Environmental-DSAI-Receptor-Builder/1.0 (kevin@krmenvironmental.com)"}
+
+
+MERGE_DISTANCE_M = 75
+# Real OSM pattern (confirmed directly on a Sturgeon Lake nursing home,
+# 2026-09-10): the same physical facility sometimes gets mapped as two
+# separate ways - one for the site/grounds, one for just the building
+# footprint (tagged `building=yes` in addition to the same amenity tag)
+# - a few metres to a few dozen metres apart, both matching this
+# script's query, so it shows up twice in any "downwind receptors"
+# list. Not a query bug (both ways really do carry the matching tag in
+# OSM) and not something to fix by tightening the query - genuinely
+# distinct nearby buildings (e.g. a second school ~500m from another)
+# need to stay separate. So this merges same-type receptors within
+# MERGE_DISTANCE_M of each other ONLY when it's safe to assume they're
+# the same site: identical name, or at least one is unnamed (an
+# unnamed way sitting right on top of a named one is almost always the
+# building-footprint duplicate of that named site). Two DIFFERENTLY
+# named receptors that happen to be close together are left alone -
+# that's a real judgment call, not something to silently collapse.
+def _haversine_m(lat1, lon1, lat2, lon2):
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlambda / 2) ** 2
+    return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _should_merge(a, b):
+    if a["type"] != b["type"]:
+        return False
+    if _haversine_m(a["lat"], a["lon"], b["lat"], b["lon"]) > MERGE_DISTANCE_M:
+        return False
+    return a["name"] == b["name"] or a["name"] == "(unnamed)" or b["name"] == "(unnamed)"
+
+
+def dedupe_nearby(receptors):
+    kept = []
+    merged_count = 0
+    for r in receptors:
+        match = next((k for k in kept if _should_merge(k, r)), None)
+        if match is None:
+            kept.append(r)
+            continue
+        merged_count += 1
+        if match["name"] == "(unnamed)" and r["name"] != "(unnamed)":
+            match.update(r)  # prefer the named one's fields going forward
+    if merged_count:
+        print(f"Merged {merged_count} near-duplicate receptor(s) (same type, within {MERGE_DISTANCE_M}m, unnamed-or-matching-name)")
+    return kept
 
 
 def fetch_province(iso):
@@ -96,6 +147,8 @@ def main():
             })
 
         time.sleep(2)  # be polite to the shared public instance between provinces
+
+    out = dedupe_nearby(out)
 
     print(f"Total receptors: {len(out)}")
     from collections import Counter
