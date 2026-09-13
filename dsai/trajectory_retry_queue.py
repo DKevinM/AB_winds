@@ -32,10 +32,14 @@ def save_queue(entries):
         json.dump(entries, f, indent=2)
 
 
-def enqueue(station, parameter, event_dt, duration_hours, cur_ts, now=None):
+def enqueue(station, parameter, event_dt, duration_hours, cur_ts, result=None, now=None):
     """Add a failed run for delayed retry. event_dt: naive UTC datetime
     of the flagged reading. cur_ts: the original EXCEEDANCE log's
-    timestamp string, kept only so a retry's log line can match it."""
+    timestamp string, kept only so a retry's log line can match it.
+    result: the original check_exceedance() dict, kept so a successful
+    retry can still tell whether the reading was extreme (see
+    climatology.is_extreme) and queue the dual-model comparison the
+    same as an immediate success would have."""
     now = now or dt.datetime.now(dt.timezone.utc)
     entries = load_queue()
     key = (station, event_dt.isoformat(), duration_hours)
@@ -47,6 +51,7 @@ def enqueue(station, parameter, event_dt, duration_hours, cur_ts, now=None):
         "event_dt": event_dt.isoformat(),
         "duration_hours": duration_hours,
         "cur_ts": cur_ts,
+        "result": result,
         "first_failed_at": now.isoformat(),
         "retries_attempted": 0,
     })

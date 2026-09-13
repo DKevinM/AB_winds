@@ -1,0 +1,76 @@
+# src/dsai/run_hrdps.py
+#
+# Thin wrapper around odour/backtraj_core.py for automated use from
+# DSAI (as opposed to its normal path: a human-submitted request via
+# LiveMap -> trigger_request.json -> run_odour_poll.sh). Runs it as a
+# subprocess with env vars, same as that poll script does, but with
+# OUTDIR pointed at a per-event directory (backtraj_core.py already
+# supports this - os.environ.get("OUTDIR", "odour_data")) instead of
+# the fixed odour_data/ path multiple concurrent/sequential DSAI events
+# would otherwise clobber.
+
+import os
+import subprocess
+import datetime as dt
+
+from stations import STATIONS
+
+AB_WINDS_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BACKTRAJ_SCRIPT = os.path.join(AB_WINDS_ROOT, "odour", "backtraj_core.py")
+RUNS_DIR = "/opt/airquality/dsai_data/hrdps_runs"
+PYTHON_EXEC = "/opt/airquality/venv/bin/python3"
+
+
+def run_hrdps(station, event_dt, duration_hours):
+    """
+    station: key into STATIONS. event_dt: naive UTC datetime.
+    Returns the path to backtraj_centerlines.geojson on success, or
+    None (with the failure reason printed) on failure - HRDPS coverage
+    is real but not universal (see MetStoreV2's "No wind files found"
+    for anything outside its rolling ~30-day retention), so this is
+    expected to occasionally come back empty, not a bug when it does.
+    """
+    if station not in STATIONS:
+        raise ValueError(f"Unknown station: {station}")
+    lat, lon = STATIONS[station]
+
+    run_id = f"{station.replace(' ', '_')}_{event_dt.strftime('%Y%m%dT%H%M')}_{duration_hours}h"
+    outdir = os.path.join(RUNS_DIR, run_id)
+    os.makedirs(outdir, exist_ok=True)
+
+    env = os.environ.copy()
+    env["LAT"] = str(lat)
+    env["LON"] = str(lon)
+    env["TIME_UTC"] = event_dt.isoformat()
+    env["HOURS"] = str(duration_hours)
+    env["OUTDIR"] = outdir
+
+    # Real timed 24h run measured ~7min (2026-09-13) - 600s gives
+    # genuine margin rather than the 180/300s first guessed and then
+    # hit mid-run.
+    result = subprocess.run(
+        [PYTHON_EXEC, BACKTRAJ_SCRIPT], cwd=AB_WINDS_ROOT,
+        env=env, capture_output=True, text=True, timeout=600,
+    )
+
+    centerlines_path = os.path.join(outdir, "backtraj_centerlines.geojson")
+    if result.returncode != 0 or not os.path.exists(centerlines_path):
+        tail = (result.stdout or "")[-600:] + (result.stderr or "")[-600:]
+        print(f"  HRDPS run failed for {station} @ {event_dt}: {tail.strip()[-300:]}")
+        return None
+    return centerlines_path
+
+
+if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) != 4:
+        print("Usage: run_hrdps.py '<Station Name>' <YYYY-MM-DDTHH:MM> <duration_hours>")
+        sys.exit(1)
+
+    station = sys.argv[1]
+    event_dt = dt.datetime.strptime(sys.argv[2], "%Y-%m-%dT%H:%M")
+    duration = int(sys.argv[3])
+
+    path = run_hrdps(station, event_dt, duration)
+    print(f"Centerlines: {path}")

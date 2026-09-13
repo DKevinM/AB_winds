@@ -106,6 +106,25 @@ def check_exceedance(clim, current_value, current_delta, abs_pct_threshold=95, r
     }
 
 
+# Threshold for "extreme" - meaningfully above the 95th-percentile base
+# exceedance trigger, not just any flagged reading. Calibrated against
+# the real 2026-09-13 Hinton-Drinnan TRS spike (9.0 ppb, 99.9th
+# percentile value + 99.9th percentile delta) that prompted the
+# dual-model comparison tool: qualifies. The same morning's smaller
+# Smoky Heights TRS reading (1.0 ppb, 98.4th percentile) does not -
+# that's the intended dividing line, a real exceedance that doesn't
+# need the extra HRDPS run every time.
+EXTREME_PERCENTILE_THRESHOLD = 99
+
+
+def is_extreme(result, threshold=EXTREME_PERCENTILE_THRESHOLD):
+    """result: a check_exceedance() dict. True if the value or the
+    delta reached the extreme threshold, not just the base 95th."""
+    value_pct = result.get("value_percentile")
+    delta_pct = result.get("delta_percentile")
+    return (value_pct is not None and value_pct >= threshold) or (delta_pct is not None and delta_pct >= threshold)
+
+
 # ---------------------------
 # Cache persistence
 # ---------------------------

@@ -17,7 +17,9 @@
 import datetime as dt
 
 from run_hysplit import run_ensemble
+from climatology import is_extreme
 import trajectory_retry_queue as queue
+import dual_model_queue
 
 
 def main():
@@ -45,6 +47,12 @@ def main():
 
         if succeeded:
             print(f"  HYSPLIT ensemble triggered for {station} @ {entry['cur_ts']} (delayed retry {attempt_n})")
+            # entry["result"] is missing on anything queued before this
+            # field existed (older queue entries) - .get() rather than
+            # crash on those, just skip the dual-model check for them.
+            if entry.get("result") and is_extreme(entry["result"]):
+                print(f"  Extreme reading - queued for dual-model (HYSPLIT vs HRDPS) comparison")
+                dual_model_queue.enqueue(station, parameter, event_dt, duration_hours, entry["cur_ts"], work_dir, now=now)
             queue.mark_result(entry, succeeded=True, now=now)
         else:
             gave_up = queue.mark_result(entry, succeeded=False, now=now)
