@@ -138,17 +138,33 @@ def ensure_downloaded(filename, subdir="", retries=3, retry_delay_s=15):
     raise RuntimeError(f"Failed to fetch {filename} after {retries} attempts: {last_err}")
 
 
-def recent_cycle_files_needed(event_dt, duration_hours):
+def recent_cycle_files_needed(event_dt, duration_hours, now=None):
     """
     Near-real-time fallback: gfsa cycle files (00/06/12/18z) covering
     the requested backward window, plus a one-day safety buffer, plus
     tomorrow's date in case event_dt is "now" and the clock ticks over
     a day boundary mid-run.
+
+    That last case is the only reason "tomorrow relative to event_dt"
+    is ever worth trying - and it's only a real possibility if
+    event_dt is genuinely close to now. For a same-hour exceedance
+    check, "tomorrow" is a calendar date that hasn't happened yet in
+    absolute time, and NOAA can't have published anything for it -
+    every cycle in that day is a guaranteed failure (confirmed live
+    2026-09-13: 8 wasted fetch attempts x 3 retries x 15s per check,
+    every single hourly run). Filtered out here rather than left for
+    ensure_downloaded() to discover 3 timeouts at a time - fixed
+    2026-09-13.
     """
+    now = now or dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+    today = now.date()
     days_back = (duration_hours // 24) + 2
     files = []
     for d in range(-1, days_back):
-        day = (event_dt - dt.timedelta(days=d)).strftime("%Y%m%d")
+        day_date = (event_dt - dt.timedelta(days=d)).date()
+        if day_date > today:
+            continue
+        day = day_date.strftime("%Y%m%d")
         for cycle in ["00", "06", "12", "18"]:
             files.append((day, f"hysplit.t{cycle}z.gfsa"))
     return files
@@ -168,7 +184,7 @@ def ensure_met_files_for_event(event_dt, duration_hours=72, now=None):
         return [(f, "") for f in needed]
 
     print(f"Archive not yet available for {event_dt} - using near-real-time gfsa cycles instead")
-    candidates = recent_cycle_files_needed(event_dt, duration_hours)
+    candidates = recent_cycle_files_needed(event_dt, duration_hours, now=now)
     fetched = []
     for day, fname in candidates:
         try:

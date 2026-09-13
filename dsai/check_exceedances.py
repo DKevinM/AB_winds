@@ -29,9 +29,10 @@ from supabase import create_client
 
 from stations import STATIONS, WATCH_STATIONS, PARAMETERS
 from climatology import load_cache, cache_key, check_exceedance
-from run_hysplit import run_ensemble
+from run_hysplit import run_ensemble, DEFAULT_DURATION_HOURS
 from fire_hotspots import check_hotspots
 from receptors import load_receptors, receptors_downwind
+import trajectory_retry_queue
 
 TRIGGERED_LOG_PATH = "/opt/airquality/dsai_data/triggered_events.json"
 PM25_PARAMETER = "Fine Particulate Matter"
@@ -105,10 +106,20 @@ def handle_individual_trigger(sb, station, parameter, cur_ts, result, receptors)
     print(f"  {result}")
     event_dt = dt.datetime.strptime(cur_ts[:16], "%Y-%m-%dT%H:%M")
     try:
-        run_ensemble(station, event_dt)
-        print(f"  HYSPLIT ensemble triggered for {station} @ {cur_ts}")
+        results, _ = run_ensemble(station, event_dt)
+        if any(v is not None for v in results.values()):
+            print(f"  HYSPLIT ensemble triggered for {station} @ {cur_ts}")
+        else:
+            # Every height failed - not necessarily a real problem, often
+            # just the met data for this hour not being published yet
+            # (see run_hysplit.py's 2026-09-13 fix). Queue it rather than
+            # lose the trigger: retried at 01:00 tomorrow and, if still
+            # short, once more the day after - see trajectory_retry_queue.py.
+            print(f"  HYSPLIT run produced no usable trajectory (met data likely not published yet) - queued for delayed retry")
+            trajectory_retry_queue.enqueue(station, parameter, event_dt, DEFAULT_DURATION_HOURS, cur_ts)
     except Exception as ex:
         print(f"  HYSPLIT run failed: {ex}")
+        trajectory_retry_queue.enqueue(station, parameter, event_dt, DEFAULT_DURATION_HOURS, cur_ts)
 
     lat, lon = STATIONS[station]
     fire = check_hotspots(lat, lon)

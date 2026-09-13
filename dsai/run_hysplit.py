@@ -23,6 +23,39 @@ import datetime as dt
 from stations import STATIONS
 from gdas_fetch import ensure_met_files_for_event, MET_DIR
 
+# tdump header is deterministic: 1 (grid count) + 1 per met file (GFSG
+# line) + 1 (BACKWARD/FORWARD line) + 1 (start point line) + 1 (output
+# variable count line) - a file with nothing beyond that many lines
+# has zero actual trajectory points, which HYSPLIT can produce (exit
+# code 0, file created) even when the run failed internally, e.g.
+# "*ERROR* metpos: start point not within (x,y,t) any data file" when
+# the requested start time falls in a real gap in the fetched met data
+# (near-real-time gfsa cycles routinely lag several hours behind
+# wall-clock - confirmed live 2026-09-13, the freshest published data
+# was ~9h stale). Originally only checked os.path.exists(), which this
+# empty-but-present file always satisfies - every trigger silently
+# logged "OK" with no usable trajectory data behind it. Fixed 2026-09-13.
+HEADER_LINES_PER_HEIGHT_OVERHEAD = 4  # grid-count + BACKWARD line + start-point line + var-count line
+
+
+def _tdump_has_trajectory(tdump_path, n_met_files):
+    if not os.path.exists(tdump_path):
+        return False
+    with open(tdump_path) as fh:
+        line_count = sum(1 for _ in fh)
+    return line_count > (n_met_files + HEADER_LINES_PER_HEIGHT_OVERHEAD)
+
+
+def _extract_hysplit_error(result):
+    """Pull the real diagnostic line out of hyts_std's output, if any -
+    e.g. "*ERROR* metpos: start point not within (x,y,t) any data
+    file" - so a failure log says why, not just that it failed."""
+    combined = (result.stdout or "") + (result.stderr or "")
+    for line in combined.splitlines():
+        if "*ERROR*" in line or "ERROR" in line:
+            return line.strip()
+    return None
+
 HYSPLIT_EXEC = "/opt/airquality/hysplit/hysplit.v5.4.2_UbuntuOS20.04.6LTS/exec/hyts_std"
 ASCDATA_SRC = "/opt/airquality/hysplit/hysplit.v5.4.2_UbuntuOS20.04.6LTS/bdyfiles/ASCDATA.CFG"
 RUNS_DIR = "/opt/airquality/dsai_data/hysplit_runs"
@@ -91,12 +124,16 @@ def run_ensemble(station, event_dt, duration_hours=DEFAULT_DURATION_HOURS):
             [HYSPLIT_EXEC], cwd=work_dir, capture_output=True, text=True, timeout=300
         )
         tdump_path = os.path.join(work_dir, tdump_name)
-        if not os.path.exists(tdump_path):
-            print(f"  FAILED - no tdump produced. stdout tail:\n{result.stdout[-500:]}")
-            results[h] = None
-        else:
+        if _tdump_has_trajectory(tdump_path, len(met_files)):
             print(f"  OK -> {tdump_path}")
             results[h] = tdump_path
+        else:
+            error_line = _extract_hysplit_error(result)
+            if error_line:
+                print(f"  FAILED - {error_line}")
+            else:
+                print(f"  FAILED - no trajectory points in output. stdout tail:\n{result.stdout[-500:]}")
+            results[h] = None
 
     return results, work_dir
 
