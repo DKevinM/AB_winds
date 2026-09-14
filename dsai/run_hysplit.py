@@ -7,14 +7,25 @@
 # archive if it's old enough to be posted, or near-real-time gfsa cycles
 # for anything too recent for that (see gdas_fetch.py).
 #
-# Default duration is 24h: for single-incident triage (as opposed to the
-# literature's 72h climatological convention), the actual delivery
-# mechanism is usually resolved within a day - confirmed against the
-# July 18 case itself, where the parcel's descent-to-ground-level and
-# gust-front delivery played out entirely within a 27h window. Pass
-# duration_hours=72 for cases where the longer look-back (air mass
-# origin/composition, not just immediate transport) is worth the extra
-# met data and runtime.
+# Default duration is 6h - Kevin's call 2026-09-14: a fast first look
+# (fewer met files, ~4x quicker HYSPLIT run, and the paired HRDPS run
+# drops from ~7min to ~2min) that's usually enough to answer "where did
+# this come from," with a longer run only when the 6h answer looks
+# ambiguous or implausible. See rerun_deep_dive.py for that escalation
+# step - reruns both models (and the comparison) at a longer duration
+# for one specific already-triggered event.
+#
+# Real methodology risk worth remembering if 6h answers keep looking
+# wrong: the one case validated against ground truth (2026-07-18
+# Edmonton East H2S) needed a 27h window to resolve the actual delivery
+# mechanism - the parcel sat at ground level for ~30h before a gust
+# front lofted and delivered it. A 6h default would have missed that
+# story entirely; it was only found by running the full 24h/72h
+# ensemble. 6h is a real bet that most triggered events are nearer-field
+# than that one was - reasonable given both models already tend to
+# agree closely in the first few hours and only diverge later (see
+# compare_trajectories.py's real output on 2026-09-13/14), but not a
+# guarantee.
 
 import os
 import subprocess
@@ -60,7 +71,7 @@ HYSPLIT_EXEC = "/opt/airquality/hysplit/hysplit.v5.4.2_UbuntuOS20.04.6LTS/exec/h
 ASCDATA_SRC = "/opt/airquality/hysplit/hysplit.v5.4.2_UbuntuOS20.04.6LTS/bdyfiles/ASCDATA.CFG"
 RUNS_DIR = "/opt/airquality/dsai_data/hysplit_runs"
 HEIGHTS_M = [100, 500, 1000]
-DEFAULT_DURATION_HOURS = 24
+DEFAULT_DURATION_HOURS = 6
 
 
 def build_control(work_dir, station, event_dt, height_m, duration_hours, met_files):
