@@ -138,6 +138,18 @@ def ensure_downloaded(filename, subdir="", retries=3, retry_delay_s=15):
     raise RuntimeError(f"Failed to fetch {filename} after {retries} attempts: {last_err}")
 
 
+MAX_GFSA_FILES = 11  # HYSPLIT's own limit is 12 ("*ERROR* runset: Numb meteo
+# grids exceed DEFGRID limit") - hit this for real 2026-09-14 on delayed
+# retries specifically: the original same-hour check always had
+# "tomorrow relative to event_dt" filtered out as a future date (see
+# below), landing just under the limit at ~11-12 files, but a next-day
+# retry has event_dt genuinely in the past, so that day is no longer
+# future and stops getting filtered - full day range x 4 cycles hit 16
+# candidates, more than enough of which downloaded successfully to
+# exceed 12 and fail outright. Capped here instead of trusting the day
+# range alone to stay small enough.
+
+
 def recent_cycle_files_needed(event_dt, duration_hours, now=None):
     """
     Near-real-time fallback: gfsa cycle files (00/06/12/18z) covering
@@ -155,17 +167,25 @@ def recent_cycle_files_needed(event_dt, duration_hours, now=None):
     every single hourly run). Filtered out here rather than left for
     ensure_downloaded() to discover 3 timeouts at a time - fixed
     2026-09-13.
+
+    Days are ordered by proximity to event_dt (closest first) and the
+    total file list capped at MAX_GFSA_FILES, so if more candidate days
+    exist than HYSPLIT can actually load, the most relevant/recent ones
+    win rather than however range() happened to order them.
     """
     now = now or dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
     today = now.date()
     days_back = (duration_hours // 24) + 2
+    day_offsets = sorted(range(-1, days_back), key=abs)  # 0, then +-1, +-2, ...
     files = []
-    for d in range(-1, days_back):
+    for d in day_offsets:
         day_date = (event_dt - dt.timedelta(days=d)).date()
         if day_date > today:
             continue
         day = day_date.strftime("%Y%m%d")
         for cycle in ["00", "06", "12", "18"]:
+            if len(files) >= MAX_GFSA_FILES:
+                return files
             files.append((day, f"hysplit.t{cycle}z.gfsa"))
     return files
 
