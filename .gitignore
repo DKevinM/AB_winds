@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 live_runs/
 met_data/
+dsai/data/
