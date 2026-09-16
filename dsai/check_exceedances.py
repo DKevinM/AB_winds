@@ -33,11 +33,23 @@ from run_hysplit import run_ensemble, DEFAULT_DURATION_HOURS
 from fire_hotspots import check_hotspots
 from receptors import load_receptors, receptors_downwind
 import trajectory_retry_queue
+import trs_retry_queue
 import dual_model_queue
 
 TRIGGERED_LOG_PATH = "/opt/airquality/dsai_data/triggered_events.json"
 PM25_PARAMETER = "Fine Particulate Matter"
 REGIONAL_PM25_THRESHOLD = 5  # more than this many stations tripping PM2.5 at once = regional smoke, not N point sources
+TRS_PARAMETER = "Total Reduced Sulphur"
+
+
+def _enqueue_retry(station, parameter, event_dt, duration_hours, cur_ts, result=None):
+    """Routes a failed HYSPLIT run to the right retry queue - TRS gets
+    parked for a monthly as-needed check (Kevin's call 2026-09-15, see
+    trs_retry_queue.py), everything else keeps the daily 01:00 cadence."""
+    if parameter == TRS_PARAMETER:
+        trs_retry_queue.enqueue(station, parameter, event_dt, duration_hours, cur_ts, result=result)
+    else:
+        trajectory_retry_queue.enqueue(station, parameter, event_dt, duration_hours, cur_ts, result=result)
 
 
 def load_triggered_log():
@@ -125,10 +137,10 @@ def handle_individual_trigger(sb, station, parameter, cur_ts, result, receptors)
             # lose the trigger: retried at 01:00 tomorrow and, if still
             # short, once more the day after - see trajectory_retry_queue.py.
             print(f"  HYSPLIT run produced no usable trajectory (met data likely not published yet) - queued for delayed retry")
-            trajectory_retry_queue.enqueue(station, parameter, event_dt, DEFAULT_DURATION_HOURS, cur_ts, result=result)
+            _enqueue_retry(station, parameter, event_dt, DEFAULT_DURATION_HOURS, cur_ts, result=result)
     except Exception as ex:
         print(f"  HYSPLIT run failed: {ex}")
-        trajectory_retry_queue.enqueue(station, parameter, event_dt, DEFAULT_DURATION_HOURS, cur_ts, result=result)
+        _enqueue_retry(station, parameter, event_dt, DEFAULT_DURATION_HOURS, cur_ts, result=result)
 
     lat, lon = STATIONS[station]
     fire = check_hotspots(lat, lon)
