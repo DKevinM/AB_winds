@@ -74,11 +74,25 @@ HEIGHTS_M = [100, 500, 1000]
 DEFAULT_DURATION_HOURS = 6
 
 
-def build_control(work_dir, station, event_dt, height_m, duration_hours, met_files):
+def resolve_station(station_or_coord):
+    """station_or_coord: either a STATIONS key (str, existing behavior -
+    every current caller passes one of these) or a (lat, lon, label)
+    tuple for an ad-hoc location not in STATIONS (e.g. a Whitecap
+    incident site in Saskatchewan - added 2026-09-16 for the Whitecap
+    incident-trajectory watcher). Returns (lat, lon, label)."""
+    if isinstance(station_or_coord, tuple):
+        lat, lon, label = station_or_coord
+        return lat, lon, label
+    if station_or_coord not in STATIONS:
+        raise ValueError(f"Unknown station: {station_or_coord}")
+    lat, lon = STATIONS[station_or_coord]
+    return lat, lon, station_or_coord
+
+
+def build_control(work_dir, lat, lon, event_dt, height_m, duration_hours, met_files):
     """met_files: list of (filename, subdir) tuples - subdir is "" for the
     permanent archive (lives directly in MET_DIR) or a YYYYMMDD subdir
     for near-real-time gfsa cycles."""
-    lat, lon = STATIONS[station]
     control_path = os.path.join(work_dir, f"CONTROL_{height_m}m")
     tdump_name = f"tdump_{height_m}m"
 
@@ -106,24 +120,24 @@ def build_control(work_dir, station, event_dt, height_m, duration_hours, met_fil
 
 def run_ensemble(station, event_dt, duration_hours=DEFAULT_DURATION_HOURS):
     """
-    station: key into STATIONS
+    station: key into STATIONS, OR a (lat, lon, label) tuple for an
+    ad-hoc location not in STATIONS.
     event_dt: naive datetime in UTC of the flagged reading
     duration_hours: how far back to run (24 default, 72 for deep-dive)
     Returns (results dict of {height_m: tdump_file_path}, work_dir)
     """
-    if station not in STATIONS:
-        raise ValueError(f"Unknown station: {station}")
+    lat, lon, label = resolve_station(station)
 
     met_files = ensure_met_files_for_event(event_dt, duration_hours=duration_hours)
 
-    run_id = f"{station.replace(' ', '_')}_{event_dt.strftime('%Y%m%dT%H%M')}_{duration_hours}h"
+    run_id = f"{label.replace(' ', '_')}_{event_dt.strftime('%Y%m%dT%H%M')}_{duration_hours}h"
     work_dir = os.path.join(RUNS_DIR, run_id)
     os.makedirs(work_dir, exist_ok=True)
     subprocess.run(["cp", ASCDATA_SRC, work_dir], check=True)
 
     results = {}
     for h in HEIGHTS_M:
-        control_path, tdump_name = build_control(work_dir, station, event_dt, h, duration_hours, met_files)
+        control_path, tdump_name = build_control(work_dir, lat, lon, event_dt, h, duration_hours, met_files)
         # hyts_std reads "CONTROL" from cwd by default - point it at ours via symlink
         cwd_control = os.path.join(work_dir, "CONTROL")
         if os.path.exists(cwd_control) or os.path.islink(cwd_control):

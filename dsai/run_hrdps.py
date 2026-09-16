@@ -23,18 +23,24 @@ PYTHON_EXEC = "/opt/airquality/venv/bin/python3"
 
 def run_hrdps(station, event_dt, duration_hours):
     """
-    station: key into STATIONS. event_dt: naive UTC datetime.
+    station: key into STATIONS, OR a (lat, lon, label) tuple for an
+    ad-hoc location not in STATIONS (e.g. a Whitecap incident site -
+    added 2026-09-16). event_dt: naive UTC datetime.
     Returns the path to backtraj_centerlines.geojson on success, or
     None (with the failure reason printed) on failure - HRDPS coverage
     is real but not universal (see MetStoreV2's "No wind files found"
     for anything outside its rolling ~30-day retention), so this is
     expected to occasionally come back empty, not a bug when it does.
     """
-    if station not in STATIONS:
-        raise ValueError(f"Unknown station: {station}")
-    lat, lon = STATIONS[station]
+    if isinstance(station, tuple):
+        lat, lon, label = station
+    else:
+        if station not in STATIONS:
+            raise ValueError(f"Unknown station: {station}")
+        lat, lon = STATIONS[station]
+        label = station
 
-    run_id = f"{station.replace(' ', '_')}_{event_dt.strftime('%Y%m%dT%H%M')}_{duration_hours}h"
+    run_id = f"{label.replace(' ', '_')}_{event_dt.strftime('%Y%m%dT%H%M')}_{duration_hours}h"
     outdir = os.path.join(RUNS_DIR, run_id)
     os.makedirs(outdir, exist_ok=True)
 
