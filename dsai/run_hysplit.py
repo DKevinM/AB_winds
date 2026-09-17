@@ -89,18 +89,28 @@ def resolve_station(station_or_coord):
     return lat, lon, station_or_coord
 
 
-def build_control(work_dir, lat, lon, event_dt, height_m, duration_hours, met_files):
+def build_control(work_dir, lat, lon, event_dt, height_m, duration_hours, met_files, direction="backward"):
     """met_files: list of (filename, subdir) tuples - subdir is "" for the
     permanent archive (lives directly in MET_DIR) or a YYYYMMDD subdir
-    for near-real-time gfsa cycles."""
+    for near-real-time gfsa cycles.
+
+    direction: "backward" (default - HYSPLIT traces where air arriving
+    at (lat, lon) at event_dt came from) or "forward" (added 2026-09-17 -
+    traces where a release starting at (lat, lon) at event_dt goes to;
+    HYSPLIT's own CONTROL format already supports this - it's just the
+    sign of the duration line - so this isn't new modeling, just
+    exposing a mode the binary already has). Use forward whenever
+    (lat, lon) IS the known source (e.g. a spill/leak site) rather than
+    a receptor looking for an upwind source."""
     control_path = os.path.join(work_dir, f"CONTROL_{height_m}m")
     tdump_name = f"tdump_{height_m}m"
 
+    signed_duration = abs(duration_hours) if direction == "forward" else -abs(duration_hours)
     lines = [
         f"{event_dt.year % 100:02d} {event_dt.month:02d} {event_dt.day:02d} {event_dt.hour:02d}",
         "1",
         f"{lat:.4f} {lon:.4f} {height_m}.0",
-        str(-abs(duration_hours)),  # negative = backward
+        str(signed_duration),  # negative = backward, positive = forward
         "0",
         "10000.0",
         str(len(met_files)),
@@ -118,33 +128,42 @@ def build_control(work_dir, lat, lon, event_dt, height_m, duration_hours, met_fi
     return control_path, tdump_name
 
 
-def run_ensemble(station, event_dt, duration_hours=DEFAULT_DURATION_HOURS):
+def run_ensemble(station, event_dt, duration_hours=DEFAULT_DURATION_HOURS, direction="backward"):
     """
     station: key into STATIONS, OR a (lat, lon, label) tuple for an
     ad-hoc location not in STATIONS.
     event_dt: naive datetime in UTC of the flagged reading
-    duration_hours: how far back to run (24 default, 72 for deep-dive)
+    duration_hours: how far to run (24 default, 72 for deep-dive)
+    direction: "backward" (default - where did the air here come from;
+    for a receptor investigating an upwind source) or "forward" (added
+    2026-09-17 - where does a release from here go; for a known source
+    like a spill/leak site - see build_control's docstring)
     Returns (results dict of {height_m: tdump_file_path}, work_dir)
     """
     lat, lon, label = resolve_station(station)
 
-    met_files = ensure_met_files_for_event(event_dt, duration_hours=duration_hours)
+    met_files = ensure_met_files_for_event(event_dt, duration_hours=duration_hours, direction=direction)
 
+    # Suffix only for forward (the new mode) so every existing backward
+    # caller's work_dir naming is byte-identical to before 2026-09-17 -
+    # not just the trajectory output.
     run_id = f"{label.replace(' ', '_')}_{event_dt.strftime('%Y%m%dT%H%M')}_{duration_hours}h"
+    if direction == "forward":
+        run_id += "_forward"
     work_dir = os.path.join(RUNS_DIR, run_id)
     os.makedirs(work_dir, exist_ok=True)
     subprocess.run(["cp", ASCDATA_SRC, work_dir], check=True)
 
     results = {}
     for h in HEIGHTS_M:
-        control_path, tdump_name = build_control(work_dir, lat, lon, event_dt, h, duration_hours, met_files)
+        control_path, tdump_name = build_control(work_dir, lat, lon, event_dt, h, duration_hours, met_files, direction=direction)
         # hyts_std reads "CONTROL" from cwd by default - point it at ours via symlink
         cwd_control = os.path.join(work_dir, "CONTROL")
         if os.path.exists(cwd_control) or os.path.islink(cwd_control):
             os.remove(cwd_control)
         os.symlink(control_path, cwd_control)
 
-        print(f"Running HYSPLIT for {station} @ {h}m AGL, {duration_hours}h back ...")
+        print(f"Running HYSPLIT for {station} @ {h}m AGL, {duration_hours}h {direction} ...")
         result = subprocess.run(
             [HYSPLIT_EXEC], cwd=work_dir, capture_output=True, text=True, timeout=300
         )

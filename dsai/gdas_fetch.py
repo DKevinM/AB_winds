@@ -68,35 +68,67 @@ def previous_week_file(year, month, week):
     return gdas_filename(prev_day.year, prev_day.month, week_of_month(prev_day.day))
 
 
-def archive_available(event_dt, now=None):
+def next_week_file(year, month, week):
+    """Mirror of previous_week_file, for direction="forward" - added
+    2026-09-17 alongside forward-trajectory support (see
+    files_needed_for_event's docstring)."""
+    end = week_end_date(year, month, week)
+    next_day = end + dt.timedelta(days=1)
+    return gdas_filename(next_day.year, next_day.month, week_of_month(next_day.day))
+
+
+def _reach_dt(event_dt, duration_hours, direction):
+    delta = dt.timedelta(hours=duration_hours)
+    return event_dt + delta if direction == "forward" else event_dt - delta
+
+
+def archive_available(event_dt, now=None, duration_hours=0, direction="backward"):
     """
-    Whether the permanent weekly archive covering event_dt is safely
-    expected to be posted by now.
+    Whether the permanent weekly archive covering the requested window is
+    safely expected to be posted by now. For a backward trajectory (the
+    default - existing callers all pass duration_hours=0, which makes
+    this identical to the pre-2026-09-17 behavior), event_dt is already
+    the newest timestamp needed. For a forward one - added 2026-09-17 for
+    the Whitecap incident-source use case, where the incident site is the
+    known source and the real question is where a release from it
+    disperses TO, not where the air over it came from - event_dt +
+    duration_hours is the newest timestamp needed instead, since that's
+    the latest data actually read.
     """
     now = now or dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
-    week = week_of_month(event_dt.day)
-    end = week_end_date(event_dt.year, event_dt.month, week)
+    reach = _reach_dt(event_dt, duration_hours, direction)
+    week = week_of_month(reach.day)
+    end = week_end_date(reach.year, reach.month, week)
     safe_after = dt.datetime.combine(end, dt.time(0, 0)) + dt.timedelta(days=ARCHIVE_SAFE_LAG_DAYS + 1)
     return now >= safe_after
 
 
-def files_needed_for_event(event_dt, duration_hours=72):
+def files_needed_for_event(event_dt, duration_hours=72, direction="backward"):
     """
-    Which archive week-files are needed to cover a backward trajectory
-    of duration_hours starting at event_dt. Includes a 12h safety
-    margin around the week boundary for interpolation at file edges.
+    Which archive week-files are needed to cover a trajectory of
+    duration_hours starting at event_dt, running backward (default,
+    original behavior) or forward in time (added 2026-09-17 - see
+    archive_available's docstring for why). Includes a 12h safety margin
+    around the week boundary for interpolation at file edges.
     """
-    reach_back = event_dt - dt.timedelta(hours=duration_hours)
+    reach = _reach_dt(event_dt, duration_hours, direction)
     week_event = week_of_month(event_dt.day)
     current = gdas_filename(event_dt.year, event_dt.month, week_event)
 
-    week_start = dt.datetime.combine(
-        week_start_date(event_dt.year, event_dt.month, week_event), dt.time(0, 0)
-    )
     files = [current]
-    if reach_back < week_start + dt.timedelta(hours=12):
-        prev = previous_week_file(event_dt.year, event_dt.month, week_event)
-        files.insert(0, prev)
+    if direction == "forward":
+        week_end = dt.datetime.combine(
+            week_end_date(event_dt.year, event_dt.month, week_event), dt.time(23, 59)
+        )
+        if reach > week_end - dt.timedelta(hours=12):
+            files.append(next_week_file(event_dt.year, event_dt.month, week_event))
+    else:
+        week_start = dt.datetime.combine(
+            week_start_date(event_dt.year, event_dt.month, week_event), dt.time(0, 0)
+        )
+        if reach < week_start + dt.timedelta(hours=12):
+            prev = previous_week_file(event_dt.year, event_dt.month, week_event)
+            files.insert(0, prev)
     return files
 
 
@@ -150,23 +182,25 @@ MAX_GFSA_FILES = 11  # HYSPLIT's own limit is 12 ("*ERROR* runset: Numb meteo
 # range alone to stay small enough.
 
 
-def recent_cycle_files_needed(event_dt, duration_hours, now=None):
+def recent_cycle_files_needed(event_dt, duration_hours, now=None, direction="backward"):
     """
     Near-real-time fallback: gfsa cycle files (00/06/12/18z) covering
-    the requested backward window, plus a one-day safety buffer, plus
-    tomorrow's date in case event_dt is "now" and the clock ticks over
-    a day boundary mid-run.
+    the requested window, plus a safety buffer.
 
-    That last case is the only reason "tomorrow relative to event_dt"
-    is ever worth trying - and it's only a real possibility if
-    event_dt is genuinely close to now. For a same-hour exceedance
-    check, "tomorrow" is a calendar date that hasn't happened yet in
-    absolute time, and NOAA can't have published anything for it -
-    every cycle in that day is a guaranteed failure (confirmed live
-    2026-09-13: 8 wasted fetch attempts x 3 retries x 15s per check,
-    every single hourly run). Filtered out here rather than left for
-    ensure_downloaded() to discover 3 timeouts at a time - fixed
-    2026-09-13.
+    Backward (default, original behavior): the window reaches back from
+    event_dt, plus a "tomorrow relative to event_dt" check for the case
+    where event_dt is genuinely close to now and the clock ticks over a
+    day boundary mid-run. For a same-hour exceedance check, "tomorrow" is
+    a calendar date that hasn't happened yet in absolute time, and NOAA
+    can't have published anything for it - every cycle in that day is a
+    guaranteed failure (confirmed live 2026-09-13: 8 wasted fetch
+    attempts x 3 retries x 15s per check, every single hourly run).
+    Filtered out here rather than left for ensure_downloaded() to
+    discover 3 timeouts at a time - fixed 2026-09-13.
+
+    Forward (added 2026-09-17, for the Whitecap incident-source use case):
+    the window reaches forward from event_dt instead - no "day before"
+    safety pad needed, since data before a past event is already settled.
 
     Days are ordered by proximity to event_dt (closest first) and the
     total file list capped at MAX_GFSA_FILES, so if more candidate days
@@ -175,11 +209,15 @@ def recent_cycle_files_needed(event_dt, duration_hours, now=None):
     """
     now = now or dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
     today = now.date()
-    days_back = (duration_hours // 24) + 2
-    day_offsets = sorted(range(-1, days_back), key=abs)  # 0, then +-1, +-2, ...
+    days_span = (duration_hours // 24) + 2
+    if direction == "forward":
+        day_offsets = list(range(0, days_span))  # event_dt, +1, +2, ...
+    else:
+        day_offsets = sorted(range(-1, days_span), key=abs)  # 0, then +-1, +-2, ...
     files = []
     for d in day_offsets:
-        day_date = (event_dt - dt.timedelta(days=d)).date()
+        offset_days = d if direction == "forward" else -d
+        day_date = (event_dt + dt.timedelta(days=offset_days)).date()
         if day_date > today:
             continue
         day = day_date.strftime("%Y%m%d")
@@ -190,21 +228,27 @@ def recent_cycle_files_needed(event_dt, duration_hours, now=None):
     return files
 
 
-def ensure_met_files_for_event(event_dt, duration_hours=72, now=None):
+def ensure_met_files_for_event(event_dt, duration_hours=72, now=None, direction="backward"):
     """
     Main entry point. Returns (met_files, met_subdir) where met_subdir
     is "" for the permanent archive (files live directly in MET_DIR) or
     a per-file subdir map for the near-real-time fallback.
     Raises if neither source can supply what's needed.
+
+    direction: "backward" (default, original behavior - trace where the
+    air arriving at event_dt/coordinates came from) or "forward" (added
+    2026-09-17 - trace where a release starting at event_dt/coordinates
+    would travel to; the right choice when the coordinates ARE the known
+    source, e.g. a Whitecap incident site, rather than a receptor).
     """
-    if archive_available(event_dt, now=now):
-        needed = files_needed_for_event(event_dt, duration_hours=duration_hours)
+    if archive_available(event_dt, now=now, duration_hours=duration_hours, direction=direction):
+        needed = files_needed_for_event(event_dt, duration_hours=duration_hours, direction=direction)
         for f in needed:
             ensure_downloaded(f)
         return [(f, "") for f in needed]
 
     print(f"Archive not yet available for {event_dt} - using near-real-time gfsa cycles instead")
-    candidates = recent_cycle_files_needed(event_dt, duration_hours, now=now)
+    candidates = recent_cycle_files_needed(event_dt, duration_hours, now=now, direction=direction)
     fetched = []
     for day, fname in candidates:
         try:

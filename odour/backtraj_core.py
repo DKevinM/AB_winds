@@ -543,12 +543,26 @@ def run_back_trajectories(
     vert_sigma_ms: float = 0.10,
     use_pbl_cap: bool = True,
     seed: int = 12345,
-    use_terrain_steering: bool = True
+    use_terrain_steering: bool = True,
+    direction: str = "backward",
 ):
+    """direction: "backward" (default, original behavior) traces where
+    air arriving at (start_lat, start_lon) at start_time_utc came from -
+    the right question for a receptor (e.g. an odour complaint location)
+    hunting for an upwind source. "forward" (added 2026-09-17, for the
+    Whitecap incident-source use case) traces where a release starting
+    at (start_lat, start_lon) at start_time_utc disperses TO - the right
+    question when the coordinates ARE the known source (a spill/leak
+    site), not a receptor. Time-reversal symmetry of advection makes this
+    a clean, symmetric change from the backward math: time steps forward
+    instead of backward, and particles move WITH the sampled wind vector
+    instead of against it - same turbulence/terrain/PBL-cap physics
+    either way, just the two signs below (time_sign)."""
     n_steps = int((hours * 3600) // dt_s)
     rng = np.random.default_rng(seed)
 
     alpha = 0.5  # turbulence persistence
+    time_sign = 1.0 if direction == "forward" else -1.0
 
     start_elev = get_surface_height(start_lat, start_lon)
 
@@ -562,15 +576,15 @@ def run_back_trajectories(
             return (
                 lat + rng.normal(0, dlat),
                 lon + rng.normal(0, dlon)
-            )        
+            )
         parts = [
             ParticleState(*jitter_latlon(start_lat, start_lon), float(z0))
             for _ in range(n_particles)
-        ]        
+        ]
         track_center = []
 
         for k in range(n_steps + 1):
-            t = start_time_utc - dt.timedelta(seconds=k * dt_s)
+            t = start_time_utc + time_sign * dt.timedelta(seconds=k * dt_s)
 
             lat_c = float(np.mean([p.lat for p in parts]))
             lon_c = float(np.mean([p.lon for p in parts]))
@@ -598,10 +612,10 @@ def run_back_trajectories(
                 p.u_turb = alpha * p.u_turb + rng.normal(0, sigma_h)
                 p.v_turb = alpha * p.v_turb + rng.normal(0, sigma_h)
                 
-                u1 = -m1["u"] + p.u_turb
-                v1 = -m1["v"] + p.v_turb
+                u1 = time_sign * m1["u"] + p.u_turb
+                v1 = time_sign * m1["v"] + p.v_turb
 
-                
+
 
                 if use_terrain_steering:
                     u1, v1 = apply_terrain_steering(p.lat, p.lon, u1, v1)
@@ -612,16 +626,16 @@ def run_back_trajectories(
                 z_mid_asl = terrain_mid + p.z_m
 
                 m2 = met.sample(
-                    t - dt.timedelta(seconds=dt_s * 0.5),
+                    t + time_sign * dt.timedelta(seconds=dt_s * 0.5),
                     lat_mid,
                     lon_mid,
                     z_mid_asl
                 )
 
 
-                
-                u2 = -m2["u"] + p.u_turb
-                v2 = -m2["v"] + p.v_turb
+
+                u2 = time_sign * m2["u"] + p.u_turb
+                v2 = time_sign * m2["v"] + p.v_turb
                 
 
                 if use_terrain_steering:
@@ -754,6 +768,11 @@ if __name__ == "__main__":
     else:
         raise ValueError("Must provide TIME_LOCAL or TIME_UTC")
     hours = float(os.environ["HOURS"])
+    # "backward" (default - unset DIRECTION keeps every existing caller's
+    # behavior identical) or "forward" (added 2026-09-17 for run sources
+    # like a Whitecap incident site, where the coordinates ARE the known
+    # source - see run_back_trajectories' docstring).
+    direction = os.environ.get("DIRECTION", "backward")
 
     set_dem(RasterDEM(
         "data/Alberta_dem_1km.tif",
@@ -777,6 +796,7 @@ if __name__ == "__main__":
         hours=hours,
         dt_s=60,
         n_particles=150,
+        direction=direction,
     )
 
     from pathlib import Path
@@ -804,9 +824,10 @@ if __name__ == "__main__":
     # the same number of hours this trajectory actually ran for (not a
     # fixed window) - samples past met's window_hours=6 load window come
     # back None from wind_from_at and are skipped, same as any other gap.
+    windseries_time_sign = 1.0 if direction == "forward" else -1.0
     windseries = []
     for i in range(int(hours)):
-        t = start_time - dt.timedelta(hours=i)
+        t = start_time + windseries_time_sign * dt.timedelta(hours=i)
         sample = wind_from_at(met, lat, lon, t)
         if sample is None:
             continue

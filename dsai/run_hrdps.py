@@ -21,11 +21,16 @@ RUNS_DIR = "/opt/airquality/dsai_data/hrdps_runs"
 PYTHON_EXEC = "/opt/airquality/venv/bin/python3"
 
 
-def run_hrdps(station, event_dt, duration_hours):
+def run_hrdps(station, event_dt, duration_hours, direction="backward"):
     """
     station: key into STATIONS, OR a (lat, lon, label) tuple for an
     ad-hoc location not in STATIONS (e.g. a Whitecap incident site -
     added 2026-09-16). event_dt: naive UTC datetime.
+    direction: "backward" (default - original behavior, where did the
+    air here come from) or "forward" (added 2026-09-17 - where does a
+    release from here go; see backtraj_core.py's run_back_trajectories
+    docstring for the underlying physics). Use forward whenever
+    (lat, lon) IS the known source rather than a receptor.
     Returns the path to backtraj_centerlines.geojson on success, or
     None (with the failure reason printed) on failure - HRDPS coverage
     is real but not universal (see MetStoreV2's "No wind files found"
@@ -40,7 +45,12 @@ def run_hrdps(station, event_dt, duration_hours):
         lat, lon = STATIONS[station]
         label = station
 
+    # Suffix only for forward (the new mode) so every existing backward
+    # caller's outdir naming is byte-identical to before 2026-09-17 -
+    # not just the trajectory output.
     run_id = f"{label.replace(' ', '_')}_{event_dt.strftime('%Y%m%dT%H%M')}_{duration_hours}h"
+    if direction == "forward":
+        run_id += "_forward"
     outdir = os.path.join(RUNS_DIR, run_id)
     os.makedirs(outdir, exist_ok=True)
 
@@ -49,6 +59,7 @@ def run_hrdps(station, event_dt, duration_hours):
     env["LON"] = str(lon)
     env["TIME_UTC"] = event_dt.isoformat()
     env["HOURS"] = str(duration_hours)
+    env["DIRECTION"] = direction
     env["OUTDIR"] = outdir
 
     # Real timed 24h run measured ~7min (2026-09-13) - 600s gives

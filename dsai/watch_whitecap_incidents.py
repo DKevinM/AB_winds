@@ -4,12 +4,13 @@
 # incidents that look like a real spill/leak/release - reuses this
 # repo's existing HYSPLIT (GDAS archive, works for any past date) and
 # HRDPS (Supabase-archived, ~30-day rolling window - see
-# cleanup_wind_files.py) back-trajectory infrastructure, pointed at the
-# incident's own coordinates instead of an Alberta AQHI station. That
-# reuse is what run_hysplit.py's/run_hrdps.py's 2026-09-16
-# `resolve_station()`/tuple support was added for - this file is the
-# first (and so far only) caller that passes a (lat, lon, label) tuple
-# instead of a STATIONS key.
+# cleanup_wind_files.py) trajectory infrastructure, pointed at the
+# incident's own coordinates instead of an Alberta AQHI station, and run
+# FORWARD rather than backward (see the direction="forward" note below -
+# this is the first caller to need that). That reuse is what
+# run_hysplit.py's/run_hrdps.py's 2026-09-16 `resolve_station()`/tuple
+# support was added for - this file is the first (and so far only)
+# caller that passes a (lat, lon, label) tuple instead of a STATIONS key.
 #
 # What counts as "worth a trajectory": whitecap_status_map's own
 # incidents.json already carries the fields needed (added there in its
@@ -31,6 +32,21 @@
 # all of Saskatchewan, so this "just works" for anything recent without
 # any new ingestion - but a miss here is expected sometimes, not a bug.
 # HYSPLIT is the reliable path; HRDPS is a bonus when it lands.
+#
+# direction="forward" (2026-09-17 fix - Kevin caught this): every other
+# caller of run_ensemble/run_hrdps runs BACKWARD trajectories, which is
+# the right physics for a receptor (an AQHI station, an odour complaint
+# location) hunting for an upwind source it doesn't know yet. That's the
+# wrong question here - a Whitecap incident's own site IS the known
+# source, so what matters is where a release from it would travel TO,
+# which needs a FORWARD trajectory instead. Reversing a backward run
+# isn't a valid substitute either (wind fields vary in time and space,
+# so a backward path's reverse isn't the true forward path). Both
+# run_hysplit.py's CONTROL-file sign and backtraj_core.py's particle
+# time/velocity signs got a direction="forward" mode added for this -
+# see their own docstrings for the physics. Every other caller
+# (odour_index.py, rerun_deep_dive.py, run_dual_model_comparison.py)
+# keeps defaulting to backward, completely unaffected.
 
 import datetime as dt
 import json
@@ -122,9 +138,9 @@ def process_incident(i, state):
     print(f"Incident {incident_id} @ {i['lat']:.4f},{i['lon']:.4f} occurred {event_dt.isoformat()}")
 
     if not entry.get("hysplit_ok"):
-        print(f"  Running HYSPLIT ({TRAJ_DURATION_HOURS}h back) ...")
+        print(f"  Running HYSPLIT ({TRAJ_DURATION_HOURS}h forward - where a release from this site goes) ...")
         try:
-            results, _work_dir = run_ensemble(coord, event_dt, duration_hours=TRAJ_DURATION_HOURS)
+            results, _work_dir = run_ensemble(coord, event_dt, duration_hours=TRAJ_DURATION_HOURS, direction="forward")
         except Exception as e:
             print(f"  HYSPLIT failed to run at all: {e}")
             results = {}
@@ -144,7 +160,7 @@ def process_incident(i, state):
         print("  Trying HRDPS (best-effort, needs Supabase wind coverage for this date) ...")
         entry["hrdps_attempted"] = True
         try:
-            hrdps_path = run_hrdps(coord, event_dt, TRAJ_DURATION_HOURS)
+            hrdps_path = run_hrdps(coord, event_dt, TRAJ_DURATION_HOURS, direction="forward")
         except Exception as e:
             print(f"  HRDPS failed to run at all: {e}")
             hrdps_path = None
