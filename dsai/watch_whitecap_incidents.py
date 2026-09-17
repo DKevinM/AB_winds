@@ -70,6 +70,17 @@ TRAJ_DURATION_HOURS = 24
 MAX_ATTEMPTS = 3
 LOOKBACK_DAYS = 30  # matches HRDPS's own real ceiling; HYSPLIT could go further but there's no reason to for a "recent incident" watcher
 
+# Both models' own default start heights (HYSPLIT's [100, 500, 1000]m,
+# HRDPS's (10, 40, 80)m) were chosen for the Alberta BACKWARD receptor
+# use case - bracketing plausible altitudes a plume might be traveling
+# at when it reaches a station, since it could have been lofted well
+# above ground. None of that applies to a FORWARD run starting at a
+# ground-level Whitecap incident (a pipeline leak, a wellsite spill) -
+# the release starts at the ground, not 500-1000m up. Kevin's call
+# 2026-09-17: use [10, 100]m for both models here instead, for
+# consistency between them.
+WHITECAP_HEIGHTS_M = [10, 100]
+
 
 def _truthy(v):
     return v in ("Yes", "Y", True, "1", 1)
@@ -140,7 +151,7 @@ def process_incident(i, state):
     if not entry.get("hysplit_ok"):
         print(f"  Running HYSPLIT ({TRAJ_DURATION_HOURS}h forward - where a release from this site goes) ...")
         try:
-            results, _work_dir = run_ensemble(coord, event_dt, duration_hours=TRAJ_DURATION_HOURS, direction="forward")
+            results, _work_dir = run_ensemble(coord, event_dt, duration_hours=TRAJ_DURATION_HOURS, direction="forward", heights_m=WHITECAP_HEIGHTS_M)
         except Exception as e:
             print(f"  HYSPLIT failed to run at all: {e}")
             results = {}
@@ -160,7 +171,7 @@ def process_incident(i, state):
         print("  Trying HRDPS (best-effort, needs Supabase wind coverage for this date) ...")
         entry["hrdps_attempted"] = True
         try:
-            hrdps_path = run_hrdps(coord, event_dt, TRAJ_DURATION_HOURS, direction="forward")
+            hrdps_path = run_hrdps(coord, event_dt, TRAJ_DURATION_HOURS, direction="forward", heights_m=WHITECAP_HEIGHTS_M)
         except Exception as e:
             print(f"  HRDPS failed to run at all: {e}")
             hrdps_path = None

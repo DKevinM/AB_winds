@@ -773,6 +773,13 @@ if __name__ == "__main__":
     # like a Whitecap incident site, where the coordinates ARE the known
     # source - see run_back_trajectories' docstring).
     direction = os.environ.get("DIRECTION", "backward")
+    # Override for run_back_trajectories' own (10, 40, 80)m default start
+    # heights (added 2026-09-17, alongside DIRECTION, for a forward run
+    # starting at a ground-level source - see run_ensemble's docstring
+    # in run_hysplit.py for the full reasoning). Unset HEIGHTS_M keeps
+    # every existing caller's heights unchanged.
+    heights_env = os.environ.get("HEIGHTS_M")
+    start_heights_m = tuple(float(h) for h in heights_env.split(",")) if heights_env else (10.0, 40.0, 80.0)
 
     set_dem(RasterDEM(
         "data/Alberta_dem_1km.tif",
@@ -796,6 +803,7 @@ if __name__ == "__main__":
         hours=hours,
         dt_s=60,
         n_particles=150,
+        start_heights_m=start_heights_m,
         direction=direction,
     )
 

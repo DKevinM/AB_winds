@@ -128,7 +128,7 @@ def build_control(work_dir, lat, lon, event_dt, height_m, duration_hours, met_fi
     return control_path, tdump_name
 
 
-def run_ensemble(station, event_dt, duration_hours=DEFAULT_DURATION_HOURS, direction="backward"):
+def run_ensemble(station, event_dt, duration_hours=DEFAULT_DURATION_HOURS, direction="backward", heights_m=None):
     """
     station: key into STATIONS, OR a (lat, lon, label) tuple for an
     ad-hoc location not in STATIONS.
@@ -138,9 +138,21 @@ def run_ensemble(station, event_dt, duration_hours=DEFAULT_DURATION_HOURS, direc
     for a receptor investigating an upwind source) or "forward" (added
     2026-09-17 - where does a release from here go; for a known source
     like a spill/leak site - see build_control's docstring)
+    heights_m: override for the module's HEIGHTS_M = [100, 500, 1000]
+    default (added 2026-09-17). That default was chosen for the backward
+    receptor use case - bracketing plausible altitudes a plume might be
+    traveling at when it reaches a station, since it could have been
+    lofted well above ground (see the real July 18 gust-front case in
+    this module's history). None of those heights make sense as a
+    *forward* run's starting point for a ground-level source like a
+    Whitecap pipeline leak or wellsite spill - the release starts at the
+    ground, not already 500-1000m up. Kevin's call 2026-09-17: forward
+    Whitecap runs use [10, 100] instead (both HYSPLIT and HRDPS, for
+    consistency between the two models).
     Returns (results dict of {height_m: tdump_file_path}, work_dir)
     """
     lat, lon, label = resolve_station(station)
+    heights_m = heights_m or HEIGHTS_M
 
     met_files = ensure_met_files_for_event(event_dt, duration_hours=duration_hours, direction=direction)
 
@@ -155,7 +167,7 @@ def run_ensemble(station, event_dt, duration_hours=DEFAULT_DURATION_HOURS, direc
     subprocess.run(["cp", ASCDATA_SRC, work_dir], check=True)
 
     results = {}
-    for h in HEIGHTS_M:
+    for h in heights_m:
         control_path, tdump_name = build_control(work_dir, lat, lon, event_dt, h, duration_hours, met_files, direction=direction)
         # hyts_std reads "CONTROL" from cwd by default - point it at ours via symlink
         cwd_control = os.path.join(work_dir, "CONTROL")

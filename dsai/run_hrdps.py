@@ -21,7 +21,7 @@ RUNS_DIR = "/opt/airquality/dsai_data/hrdps_runs"
 PYTHON_EXEC = "/opt/airquality/venv/bin/python3"
 
 
-def run_hrdps(station, event_dt, duration_hours, direction="backward"):
+def run_hrdps(station, event_dt, duration_hours, direction="backward", heights_m=None):
     """
     station: key into STATIONS, OR a (lat, lon, label) tuple for an
     ad-hoc location not in STATIONS (e.g. a Whitecap incident site -
@@ -31,6 +31,10 @@ def run_hrdps(station, event_dt, duration_hours, direction="backward"):
     release from here go; see backtraj_core.py's run_back_trajectories
     docstring for the underlying physics). Use forward whenever
     (lat, lon) IS the known source rather than a receptor.
+    heights_m: override for run_back_trajectories' own (10, 40, 80)m
+    default start heights (added 2026-09-17, alongside direction, for
+    the same reason - see run_hysplit.py's run_ensemble docstring).
+    Omit to keep every existing caller's heights unchanged.
     Returns the path to backtraj_centerlines.geojson on success, or
     None (with the failure reason printed) on failure - HRDPS coverage
     is real but not universal (see MetStoreV2's "No wind files found"
@@ -60,6 +64,8 @@ def run_hrdps(station, event_dt, duration_hours, direction="backward"):
     env["TIME_UTC"] = event_dt.isoformat()
     env["HOURS"] = str(duration_hours)
     env["DIRECTION"] = direction
+    if heights_m is not None:
+        env["HEIGHTS_M"] = ",".join(str(h) for h in heights_m)
     env["OUTDIR"] = outdir
 
     # Real timed 24h run measured ~7min (2026-09-13) - 600s gives
