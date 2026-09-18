@@ -11,11 +11,23 @@
 # first (and so far only) caller that passes a (lat, lon, label) tuple
 # instead of a STATIONS key.
 #
-# What counts as "worth a trajectory": whitecap_status_map's own
-# incidents.json already carries the fields needed (added there in its
-# Phase 1 review pass, 2026-09-16) - a reported spill volume > 0, H2S
-# involvement, or a water-body-impact flag. Not string-matching
-# INCIDENTTYPE - that field is blank on 44% of Whitecap's SK incidents.
+# What counts as "worth a trajectory" - narrowed 2026-09-18 (Kevin's
+# review): a wind trajectory answers "where might an airborne parcel
+# move" - genuinely useful for H2S/gas/odour/atmospheric releases, but
+# not the right pathway model for a liquid spill, an oil release to
+# land, or a water-body impact (those want incident -> terrain/drainage
+# -> nearest surface water -> downstream pathway instead - not built
+# yet). Previously triggered on volume_spilled > 0 OR H2S OR
+# water_body_impacted; now H2S involvement only (`involves_h2s` in
+# whitecap_status_map's incidents.json), since that's the one clean
+# atmospheric-pathway signal available - checked the actual INCIDENTTYPE
+# values directly and there's no separate gas-release flag to lean on
+# (they describe the mechanism/equipment - "Break", "Leak", "Fire" -
+# not the substance or whether it's airborne), and that field is blank
+# on 44% of Whitecap's SK incidents besides. Real consequence of this
+# narrowing: 0 of Whitecap's last 30 days' incidents involve H2S (25
+# total on record, all-time) - so the panel showing zero trajectories
+# most days is the correct, honest result, not a bug.
 #
 # Idempotent like check_exceedances.py: a small state file tracks which
 # incident IDs have already been attempted, capped at MAX_ATTEMPTS
@@ -95,11 +107,7 @@ def is_candidate(i):
         return False
     if not i.get("occurrence_date"):
         return False
-    return (
-        (i.get("volume_spilled") or 0) > 0
-        or _truthy(i.get("involves_h2s"))
-        or _truthy(i.get("water_body_impacted"))
-    )
+    return _truthy(i.get("involves_h2s"))
 
 
 def load_state():
