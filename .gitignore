@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
 live_runs/
+click_runs/
 met_data/
 dsai/data/
