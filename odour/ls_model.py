@@ -235,6 +235,11 @@ class LSConfig:
     # timescale - negligible at 5 m/s, dominant near calm. 0 disables.
     meander_sigma: float = 0.3   # m/s
     meander_T: float = 1800.0    # s
+    # The centerline is the mean position of the particles still in play.
+    # Once particles start leaving the domain, the mean of the stragglers
+    # wanders (survivor bias), so stop the line when fewer than this share
+    # remain. The cloud/footprint keep every particle.
+    centerline_min_frac: float = 0.5
 
 
 @dataclass
@@ -304,7 +309,7 @@ def run_ls(met, start_lat, start_lon, start_time_utc, hours=5.0,
         track = []
         for k in range(n_adv + 1):
             t = start_time_utc + dt.timedelta(seconds=sgn * k * cfg.dt_adv)
-            if np.any(alive):
+            if alive.sum() >= cfg.centerline_min_frac * n:
                 track.append((t, float(lat[alive].mean()), float(lon[alive].mean()), float(z[alive].mean())))
             if k % cfg.record_every == 0:
                 for i in np.flatnonzero(alive):

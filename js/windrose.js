@@ -116,10 +116,18 @@
       const oldest = windSeries[n - 1];
       const span = Math.round((Date.parse(latest.time_utc) - Date.parse(oldest.time_utc)) / 3600000);
       const rel = sel.direction === "forward" ? "after" : "before";
+      // same day -> "Oct 8 14:00 – 18:00"; crossing midnight keeps both dates
+      const [od, ot] = [oldest.time_local.slice(0, -6), oldest.time_local.slice(-5)];
+      const [ld, lt] = [latest.time_local.slice(0, -6), latest.time_local.slice(-5)];
+      const windowTxt = od === ld ? `${od} ${ot} &ndash; ${lt}` : `${oldest.time_local} &ndash; ${latest.time_local}`;
       document.getElementById(captionId).innerHTML = `
-        <b>Wind FROM ${Math.round(sel.wd)}° at ${sel.ws.toFixed(1)} m/s at ${sel.time_local}</b><br>
-        <span style="opacity:0.65;">model window ${oldest.time_local} &ndash; ${latest.time_local} (${span} h ${rel})
-        &middot; newest = solid, oldest = faint${sel.source ? " &middot; " + sel.source : ""}</span>
+        <div style="line-height:1.45;">
+          <b>${sel.time_local}</b><br>
+          Wind FROM ${Math.round(sel.wd)}° at ${sel.ws.toFixed(1)} m/s<br>
+          <span style="opacity:0.8;">Window: ${windowTxt} (${span} h ${rel})</span><br>
+          <span style="opacity:0.65;">newest = solid &middot; oldest = faint</span>
+          ${sel.source ? `<br><span style="opacity:0.65;">${sel.source}</span>` : ""}
+        </div>
       `;
     } else {
       document.getElementById(captionId).innerHTML = `
