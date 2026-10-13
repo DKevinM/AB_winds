@@ -4,651 +4,281 @@
   <meta charset="utf-8" />
   <title>AB Wind (Leaflet)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
-
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body { height: 100%; margin: 0; }
-    #map { height: 100%; width: 100%; }
-    .info {
-      position: absolute;
-      top: 10px;
-      left: 60px;
-      z-index: 999;
-      background: rgba(0,0,0,0.7);
-      color: #fff;
-      font: 14px/1.3 Arial, sans-serif;
-      padding: 8px 10px;
-      border-radius: 6px;
-      max-width: 360px;
+    #map { height: 100%; width: 100%; background: #1b1f24; }
+    .panel {
+      position: absolute; top: 10px; left: 60px; z-index: 999;
+      background: rgba(0,0,0,0.75); color: #fff;
+      font: 14px/1.35 Arial, sans-serif; padding: 8px 12px; border-radius: 6px;
+      max-width: 380px;
     }
-    canvas.wind {
-      position: absolute;
-      top: 0;
-      left: 0;
-      transform: none !important;
-      pointer-events: none;
-    }
+    .panel b { color: #9fd3ff; }
+    .panel input[type=range] { width: 100%; margin: 6px 0 2px; }
+    .panel .row { display: flex; justify-content: space-between; font-size: 12px; color: #ccc; }
+    .panel button { font-size: 12px; margin-top: 4px; cursor: pointer; }
+    .legend { margin-top: 6px; display: flex; gap: 6px; font-size: 11px; color: #ddd; flex-wrap: wrap; }
+    .legend span { display: inline-flex; align-items: center; gap: 3px; }
+    .legend i { width: 14px; height: 3px; display: inline-block; }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  <div class="info" id="info">Loading wind…</div>
+  <div class="panel" id="panel">
+    <div id="status">Loading wind…</div>
+    <input id="slider" type="range" min="0" max="0" step="1" value="0" disabled />
+    <div class="row"><span id="sliderLabel"></span><button id="nowBtn" disabled>Now</button></div>
+    <div class="legend" id="legend"></div>
+  </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
-  <script src="js/wind_fetch.js"></script>
-
-
-
   <script>
-    let field = null;
-    let windTime = {
-      baseUTC: null,
-      i: 0,
-      a: 0
-    };    
-
-
-    // If your grid is Alberta-only, set a reasonable start view:
-    const map = L.map("map", { zoomControl: true }).setView([55, -115], 6);
-
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 18,
-      attribution: "&copy; OpenStreetMap"
-    }).addTo(map);
-
-
-    function getDataAgeText(modelTimeISO) {
-      if (!modelTimeISO) return "Data age: unknown";
-    
-      const modelTime = Date.parse(modelTimeISO);
-      const nowUTC = Date.now();
-    
-      const diffMs = nowUTC - modelTime;
-    
-      const diffMin = Math.floor(diffMs / 60000);
-      const hours = Math.floor(diffMin / 60);
-      const minutes = diffMin % 60;
-    
-      if (hours > 0) {
-        return `Data age: ${hours}h ${minutes}m`;
-      } else {
-        return `Data age: ${minutes}m`;
-      }
-    }
-
-
-    function getEffectiveWindTime() {
-      if (!windTime.baseUTC) return null;
-      return new Date(
-        windTime.baseUTC.getTime() + (windTime.i + windTime.a) * 3600_000
-      );
-    }
-
-    
-    function getWindTimeDiagnostics() {
-      if (!field || !windTime.baseUTC) return "Wind time: unknown";
-    
-      const modelUTC = new Date(windTime.baseUTC).toUTCString();
-      const effectiveTime = getEffectiveWindTime();
-      const nowUTC = new Date();
-    
-      const ageMs = nowUTC - effectiveTime;
-      const ageMin = Math.floor(ageMs / 60000);
-      const h = Math.floor(ageMin / 60);
-      const m = ageMin % 60;
-    
-      const ageText = h > 0 ? `${h}h ${m}m` : `${m}m`;
-    
-      return `
-    Model cycle: ${modelUTC}<br>
-    Effective wind time: ${effectiveTime.toUTCString()
-        }`;
-    // Current time: ${nowUTC.toUTCString()}<br>
-    // <b>Data age: ${ageText}</b>
-    }
-    
-    
-    const overlays = {};   // for layer control
-
-
-    function scheduleHourlyRefresh() {
-      const now = new Date();
-      const next = new Date(now);
-      next.setMinutes(0, 0, 0);
-      next.setHours(next.getHours() + 1);
-
-      const delay = Math.max(60000, next.getTime() - now.getTime());
-      console.log("Next hourly reload in", Math.round(delay / 1000), "seconds");
-
-      setTimeout(() => {
-        window.location.reload();
-      }, delay);
-    }
-
-
-    
-    
-    function loadOutlineLayer(url, color, name) {
-      return fetch(url)
-        .then(r => r.json())
-        .then(geo => {
-          const layer = L.geoJSON(geo, {
-            style: {
-              color: color,
-              weight: 4,
-              opacity: 1,
-              fillOpacity: 0,
-              dashArray: "6 3"
-            }
-          });
-    
-          overlays[name] = layer;
-          layer.addTo(map);
-        });
-    }
-    
-    // Load ACA and WCAS
-    Promise.all([
-      loadOutlineLayer("data/ACA.geojson", "#ffcc00", "ACA Airshed"),
-      loadOutlineLayer("data/WCAS.geojson", "#00ffff", "WCAS Airshed")
-    ]).then(() => {
-      L.control.layers(null, overlays, { collapsed: false }).addTo(map);
-    });
-
-
-    
-
-    // ---------- Minimal wind particle canvas layer ----------
-    const WindLayer = L.Layer.extend({
-      onAdd: function(map) {
-        this._map = map;
-        this._canvas = L.DomUtil.create("canvas", "wind");
-        this._canvas.classList.add("wind");
-        this._ctx = this._canvas.getContext("2d");
-        this._lastReset = Date.now();
-        this._canvas.width = window.innerWidth;
-        this._canvas.height = window.innerHeight;
-        
-       
-        console.log("CANVAS ADDED", this._canvas);
-        
-        map.getPanes().overlayPane.appendChild(this._canvas);
-
-        map.on("move zoom resize", this._reset, this);
-        map.on("moveend zoomend resize", this._updateMaskPath, this);
-        
-        this._reset();
-      },
-
-      
-      _onZoomStart: function() {
-        if (!this._ctx) return;
-        this._ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
-      
-      },
-    
-      onRemove: function(map) {
-        map.off("move zoom resize", this._reset, this);
-        if (this._anim) cancelAnimationFrame(this._anim);
-        this._canvas.remove();
-      },
-    
-      setField: function(field) {
-        this._field = field;
-        this._initParticles();
-        this._start();
-      },
-      
-      updateField: function(field) {
-        this._field = field;
-      },
-      
-
-      _reset: function () {
-        const size = this._map.getSize();
-      
-        // This is the missing anchor that fixes everything
-        this._topLeft = this._map.containerPointToLayerPoint([0, 0]);
-      
-        L.DomUtil.setPosition(this._canvas, this._topLeft);
-      
-        this._canvas.width = size.x;
-        this._canvas.height = size.y;
-
-        
-        const ctx = this._ctx;
-        const w = this._canvas.width;
-        const h = this._canvas.height;
-        
-        // HARD CLEAR (debug mode)
-        ctx.globalCompositeOperation = "source-over";
-        ctx.clearRect(0, 0, w, h);
-
-        
-        if (this._field) this._initParticles();
-        if (this._maskGeoJSON) this._updateMaskPath();
-      },
-
-
-      setMask: function(geojson) {
-        this._maskGeoJSON = geojson;
-        this._updateMaskPath();
-      },
-      
-      _updateMaskPath: function() {
-        if (!this._maskGeoJSON || !this._topLeft) return;
-      
-        const path = new Path2D();
-      
-        const addRing = (ring) => {
-          ring.forEach(([lon, lat], i) => {
-            const p = this._latLngToCanvasPoint(lat, lon);
-            if (i === 0) path.moveTo(p.x, p.y);
-            else path.lineTo(p.x, p.y);
-          });
-          path.closePath();
-        };
-      
-        for (const feat of this._maskGeoJSON.features) {
-          const geom = feat.geometry;
-          if (!geom) continue;
-      
-          if (geom.type === "Polygon") {
-            geom.coordinates.forEach(addRing);
-          } else if (geom.type === "MultiPolygon") {
-            geom.coordinates.forEach(poly => poly.forEach(addRing));
-          }
-        }
-      
-        this._maskPath = path;
-      },
-
-      
-      _latLngToCanvasPoint: function (lat, lon) {
-        const p = this._map.latLngToLayerPoint([lat, lon]);
-        return p.subtract(this._topLeft);
-      },
-      
-      _canvasPointToLatLng: function (x, y) {
-        const p = L.point(x, y).add(this._topLeft);
-        return this._map.layerPointToLatLng(p);
-      },
-
-      
-      _initParticles: function() {
-        const zoom = this._map.getZoom();
-        const width = this._map.getSize().x;
-      
-        // scale with zoom
-        const density = Math.max(0.6, Math.min(2.5, (zoom - 2) / 3));
-        const count = Math.min(4000, Math.round(width * 2.5 * density));
-        this._particles = Array.from(
-          { length: count },
-          () => this._randomParticle()
-        );
-      },
-    
-      _randomParticle: function() {
-        const f = this._field;
-        if (!f) return { lat: 54.5, lon: -114.0, age: 0 };
-    
-        const lonMin = f.lon0;
-        const lonMax = f.lon0 + f.dx * (f.nx - 1);
-        const latMax = f.lat0;
-        const latMin = f.lat0 - f.dy * (f.ny - 1);
-    
-        for (let k = 0; k < 60; k++) {
-          const lat = latMin + Math.random() * (latMax - latMin);
-          const lon = lonMin + Math.random() * (lonMax - lonMin);
-    
-          const v = f.sample(lat, lon);
-          if (!v || !isFinite(v.u) || !isFinite(v.v)) continue;
-
-      
-              
-          const pt = this._latLngToCanvasPoint(lat, lon);
-          if (pt.x >= 0 && pt.y >= 0 && pt.x <= this._canvas.width && pt.y <= this._canvas.height) {
-            return { lat, lon, age: Math.random() * 200 };
-          }
-        }
-    
-        return { lat: 54.5, lon: -114.0, age: 0 };
-      },
-    
-      _start: function() {
-        if (this._anim) cancelAnimationFrame(this._anim);
-        const frame = () => {
-          this._step();
-          this._anim = requestAnimationFrame(frame);
-        };
-        frame();
-      },
-    
-      _step: function () {
-        if (!this._field || !this._particles) return;
-        
-        const now = Date.now();
-        const ctx = this._ctx;
-        
-      
-        
-      
-        ctx.save();
-
-        // Fade previous frame 
-        ctx.globalCompositeOperation = "destination-in";
-        ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
-        ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
-        ctx.globalCompositeOperation = "source-over";
-
-        const zoom = this._map.getZoom();
-        ctx.beginPath();
-
-        // inject new particles every frame (keeps map alive)
-        for (let i = 0; i < this._particles.length; i++) {
-          if (Math.random() < 0.02) {
-            this._particles[i] = this._randomParticle();
-          }
-        }
-        
-        for (const p of this._particles) {
-          if (p.age++ > 220) {
-            Object.assign(p, this._randomParticle());
-            continue;
-          }
-      
-          const ll = { lat: p.lat, lon: p.lon };
-          const v = this._field.sample(ll.lat, ll.lon);
-          
-          if (!v || !isFinite(v.u) || !isFinite(v.v)) {
-            Object.assign(p, this._randomParticle());
-            continue;
-          }
-          
-          const TIME_SCALE = Math.max(1.5, Math.min(5, (zoom - 2) * 0.8));
-          
-          const dt = 1600 * TIME_SCALE;
-          const metersPerDegLat = 111320;
-          const metersPerDegLon = 111320 * Math.cos(ll.lat * Math.PI / 180);
-          
-          const jitter = 0.00005;
-          const lat2 = ll.lat + (v.v * dt) / metersPerDegLat + (Math.random() - 0.5) * jitter;
-          const lon2 = ll.lon + (v.u * dt) / metersPerDegLon + (Math.random() - 0.5) * jitter;
-          
-          // Draw using projection only at render time
-          const p1 = this._latLngToCanvasPoint(p.lat, p.lon);
-          const p2 = this._latLngToCanvasPoint(lat2, lon2);
-
-          
-          const speed = v.speed;
-          const intensity = Math.min(255, speed * 25);
-          ctx.strokeStyle = `rgba(${intensity}, ${200 - intensity * 0.5}, 255, 1.0)`;
-          ctx.lineWidth = Math.max(1.5, Math.min(4, speed * 0.4));
-          ctx.shadowColor = ctx.strokeStyle;
-          ctx.shadowBlur = v.speed > 6 ? 8 : 3;
-
-
-          ctx.moveTo(p1.x, p1.y);
-          ctx.lineTo(p2.x, p2.y);
-
-          
-          // Update particle in geographic space
-          p.lat = lat2;
-          p.lon = lon2;
-      
-          if (!this._field.sample(p.lat, p.lon)) {
-            Object.assign(p, this._randomParticle());
-          }
-        }
-      
-        ctx.stroke();
-        ctx.restore();
-      }
-    });
-
-
-
-
-   
-
-
-    const windLayer = new WindLayer();
-    windLayer.addTo(map);
-
-    fetch("data/Alberta.geojson")
-      .then(r => r.json())
-      .then(gj => {
-        windLayer.setMask(gj);
-        windLayer._updateMaskPath();  
-      });
-    
-
-    function getCompassArrow(deg) {
-      const dirs = ["N","NE","E","SE","S","SW","W","NW"];
-      return dirs[Math.round(deg / 45) % 8];
-    }
-    
-    map.on("click", (e) => {
-      if (!field) return;
-    
-      const { lat, lng} = e.latlng;
-      const wind = field.sample(lat, lng);
-    
-      if (!wind) {
-        L.popup()
-          .setLatLng(e.latlng)
-          .setContent("No wind data at this location")
-          .openOn(map);
-        return;
-      }
-    
-      const dir = (270 - Math.atan2(wind.v, wind.u) * 180 / Math.PI + 360) % 360;
-      const speed = wind.speed;
-      const arrow = getCompassArrow(dir);
-    
-      const ageText = getDataAgeText(field.modelTime);
-
-    
-      const html = `
-        <b>Wind at clicked point</b><br>
-        Speed: ${speed.toFixed(2)} m/s<br>
-        Direction: ${dir.toFixed(0)}° ${arrow}
-      `;
-    
-      L.popup()
-        .setLatLng(e.latlng)
-        .setContent(html)
-        .openOn(map);
-    });
-
-
-    
-    
-async function loadWind() {
-  const info = document.getElementById("info");
-  info.textContent = "Loading wind JSON…";
+  // HRDPS 10 m wind, stored by AB_winds/py/ab_met_pull.py on a regular north-up
+  // lat/lon grid with earth-relative u (east) / v (north) - grid_version 2.
+  // Files written before 2026-10-13 had the rotated-grid layout and were
+  // re-processed; a file without meta.grid_version is refused below.
 
   const SUPABASE_URL = "https://zcunoncbyitfsilrhymv.supabase.co";
   const API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpjdW5vbmNieWl0ZnNpbHJoeW12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE3Mjk3NDYsImV4cCI6MjA2NzMwNTc0Nn0._z_tqm_5UIBkWfMa7HAJrUOA-0t9vOaBVV48-74esWQ";
+  const TZ = "America/Edmonton";
+  const HOUR = 3600e3;
 
-  const url = `${SUPABASE_URL}/rest/v1/wind_files?select=*&order=valid_time.desc&limit=2`;
+  const map = L.map("map", { zoomControl: true }).setView([55, -115], 6);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18, attribution: "&copy; OpenStreetMap"
+  }).addTo(map);
 
-  const resMeta = await fetch(url, {
-    headers: {
-      apikey: API_KEY,
-      Authorization: `Bearer ${API_KEY}`
-    }
+  // ---------- airshed outlines ----------
+  const overlays = {};
+  Promise.all([
+    ["data/ACA.geojson", "#ffcc00", "ACA Airshed"],
+    ["data/WCAS.geojson", "#00ffff", "WCAS Airshed"]
+  ].map(([url, color, name]) => fetch(url).then(r => r.json()).then(gj => {
+    overlays[name] = L.geoJSON(gj, { style: { color, weight: 3, opacity: 1, fillOpacity: 0, dashArray: "6 3" },
+                                     interactive: false }).addTo(map);
+  }))).then(() => L.control.layers(null, overlays, { collapsed: false }).addTo(map));
+
+  // ---------- time formatting ----------
+  const fmtLocal = t => new Date(t).toLocaleString("en-CA", {
+    timeZone: TZ, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
   });
+  const fmtUTC = t => new Date(t).toISOString().slice(0, 16).replace("T", " ") + " UTC";
 
-  const rows = await resMeta.json();
-
-  if (!rows || !rows.length) {
-    throw new Error("No wind files");
+  // ---------- data: catalogue + lazily loaded snapshots ----------
+  async function sb(path) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: { apikey: API_KEY, Authorization: `Bearer ${API_KEY}` } });
+    if (!r.ok) throw new Error(`Supabase ${r.status}`);
+    return r.json();
   }
 
-  const fileA = rows[0];
-  const fileB = rows[1];
-
-  const fetchWind = async (filePath) => {
-    const fileURL = `${SUPABASE_URL}/storage/v1/object/public/winds/${filePath}`;
-    const res = await fetch(fileURL);
-    const buffer = await res.arrayBuffer();
-    const text = pako.inflate(buffer, { to: "string" });
-    return JSON.parse(text);
-  };
-  
-  const dataA = await fetchWind(fileA.file_path);
-  const dataB = await fetchWind(fileB.file_path);
-
-  
-
-  const makeField = (data) => ({
-    sample: (lat, lon) => {
-      const grid = data.grid;
-  
-      const nx = grid.nx;
-      const ny = grid.ny;
-      const lon0 = grid.lo1;
-      const lat0 = grid.la1;
-      const dx = grid.dx;
-      const dy = grid.dy;
-  
-      const udata = data.fields.ugrd10[0];
-      const vdata = data.fields.vgrd10[0];
-  
-      const fx = (lon - lon0) / dx;
-      const fy = (lat0 - lat) / dy;
-
-      if (!isFinite(fx) || !isFinite(fy)) return null;
-  
-      const i = Math.floor(fx);
-      const j = Math.floor(fy);
-  
-      const di = fx - i;
-      const dj = fy - j;
-  
-      if (
-        !Number.isInteger(i) || !Number.isInteger(j) ||
-        j < 0 || j >= ny - 1 ||
-        i < 0 || i >= nx - 1
-      ) return null;
-
-
-      if (!udata[j] || !udata[j+1]) return null;
-      if (!vdata[j] || !vdata[j+1]) return null;
-      
-      
-      const u =
-        udata[j][i] * (1 - di) * (1 - dj) +
-        udata[j][i+1] * di * (1 - dj) +
-        udata[j+1][i] * (1 - di) * dj +
-        udata[j+1][i+1] * di * dj;
-  
-      const v =
-        vdata[j][i] * (1 - di) * (1 - dj) +
-        vdata[j][i+1] * di * (1 - dj) +
-        vdata[j+1][i] * (1 - di) * dj +
-        vdata[j+1][i+1] * di * dj;
-  
-      if (!isFinite(u) || !isFinite(v)) return null;
-  
-      return { u, v, speed: Math.sqrt(u*u + v*v) };
+  // One entry per valid time: the newest run that has it.
+  async function loadCatalogue() {
+    const from = new Date(Date.now() - 6 * HOUR).toISOString();
+    const rows = await sb(`wind_files?select=run_time,forecast_hour,valid_time,file_path` +
+                          `&model=eq.HRDPS&valid_time=gte.${from}&order=valid_time.asc,run_time.desc&limit=500`);
+    const byValid = new Map();
+    for (const r of rows) {
+      const t = Date.parse(r.valid_time);
+      if (!byValid.has(t)) byValid.set(t, { t, run: Date.parse(r.run_time), lead: r.forecast_hour, path: r.file_path });
     }
-  });
+    return [...byValid.values()].sort((a, b) => a.t - b.t);
+  }
 
-  
-  const fieldA = makeField(dataA);
-  const fieldB = makeField(dataB);  
+  const snapCache = new Map();   // file_path -> Promise<snapshot>
+  function loadSnapshot(entry) {
+    if (!snapCache.has(entry.path)) {
+      snapCache.set(entry.path, (async () => {
+        const res = await fetch(`${SUPABASE_URL}/storage/v1/object/public/winds/${entry.path}`);
+        if (!res.ok) throw new Error(`wind file ${res.status}`);
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        const text = (bytes[0] === 0x1f && bytes[1] === 0x8b) ? pako.inflate(bytes, { to: "string" })
+                                                              : new TextDecoder().decode(bytes);
+        const d = JSON.parse(text);
+        if (!d.meta || !d.meta.grid_version) throw new Error("old-layout wind file (pre grid_version 2) - refusing to draw it");
+        const g = d.grid, n = g.nx * g.ny;
+        const flat = rows => { const a = new Float32Array(n); let k = 0;
+          for (const row of rows) for (const x of row) a[k++] = (x === null ? NaN : x); return a; };
+        return { ...entry, grid: g, u: flat(d.fields.ugrd10[0]), v: flat(d.fields.vgrd10[0]) };
+      })());
+      snapCache.get(entry.path).catch(() => snapCache.delete(entry.path));
+    }
+    return snapCache.get(entry.path);
+  }
 
+  // Bilinear sample of one snapshot - same index convention as every other reader:
+  // i = (lon - lo1) / dx, j = (la1 - lat) / dy.
+  function sampleSnap(s, lat, lon) {
+    const g = s.grid, fi = (lon - g.lo1) / g.dx, fj = (g.la1 - lat) / g.dy;
+    if (!(fi >= 0 && fj >= 0 && fi < g.nx - 1 && fj < g.ny - 1)) return null;
+    const i = fi | 0, j = fj | 0, di = fi - i, dj = fj - j, k = j * g.nx + i;
+    const bl = a => a[k] * (1 - di) * (1 - dj) + a[k + 1] * di * (1 - dj) + a[k + g.nx] * (1 - di) * dj + a[k + g.nx + 1] * di * dj;
+    const u = bl(s.u), v = bl(s.v);
+    return (isFinite(u) && isFinite(v)) ? { u, v } : null;
+  }
 
-  let blendAlpha = 0;
-  
-  field = {
-    sample: (lat, lon) => {
-      const a = fieldA.sample(lat, lon);
-      const b = fieldB.sample(lat, lon);
-  
-      if (!a && !b) return null;
-      if (!a) return b;
-      if (!b) return a;
-  
-      const u = a.u * (1 - blendAlpha) + b.u * blendAlpha;
-      const v = a.v * (1 - blendAlpha) + b.v * blendAlpha;
-  
-      return {
-        u,
-        v,
-        speed: Math.sqrt(u * u + v * v)
-      };
+  // The field actually drawn: two snapshots bracketing the chosen time, blended by real time.
+  let field = null;
+  function makeField(a, b, t) {
+    const w = (b && b.t > a.t) ? Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t))) : 0;
+    return {
+      t, a, b, w,
+      sample(lat, lon) {
+        const x = sampleSnap(a, lat, lon);
+        if (!b || w === 0) return x;
+        const y = sampleSnap(b, lat, lon);
+        if (!x || !y) return x || y;
+        return { u: x.u * (1 - w) + y.u * w, v: x.v * (1 - w) + y.v * w };
+      }
+    };
+  }
+
+  // ---------- particle layer ----------
+  // Particles live in lat/lon; drawing projects them each frame. The canvas is
+  // re-anchored to the map's top-left corner on every moveend/zoomend and hidden
+  // during zoom animation (leaflet-zoom-hide), so it can never drift off the basemap.
+  const SPEED_BINS = [   // m/s upper bound -> colour
+    // dark, saturated colours: must read against OSM's pale land AND green forest
+    [2, "#1e3a8a"], [4, "#2563eb"], [7, "#7c3aed"], [10, "#c026d3"], [14, "#ea580c"], [Infinity, "#dc2626"]
+  ];
+  const PX_PER_MS = 0.45;      // screen pixels moved per frame per m/s: same look at every zoom
+  const MAX_AGE = 70;          // frames
+
+  const WindLayer = L.Layer.extend({
+    onAdd(m) {
+      this._map = m;
+      this._canvas = L.DomUtil.create("canvas", "leaflet-zoom-hide");
+      this._canvas.style.pointerEvents = "none";
+      m.getPanes().overlayPane.appendChild(this._canvas);
+      this._ctx = this._canvas.getContext("2d");
+      m.on("movestart zoomstart", this._pause, this);
+      m.on("moveend zoomend resize", this._reset, this);
+      this._reset();
     },
-  
-    lon0: dataA.grid.lo1,
-    lat0: dataA.grid.la1,
-    dx: dataA.grid.dx,
-    dy: dataA.grid.dy,
-    nx: dataA.grid.nx,
-    ny: dataA.grid.ny,
-    modelTime: dataA.meta?.run || null
-  };
-  
-  setInterval(() => {
-    blendAlpha += 0.005;
-    if (blendAlpha > 1) blendAlpha = 0;
-  }, 100);
+    onRemove(m) {
+      m.off("movestart zoomstart", this._pause, this);
+      m.off("moveend zoomend resize", this._reset, this);
+      cancelAnimationFrame(this._raf);
+      this._canvas.remove();
+    },
+    _pause() {
+      cancelAnimationFrame(this._raf); this._raf = null;
+      this._ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
+    },
+    _reset() {
+      const m = this._map, size = m.getSize(), dpr = window.devicePixelRatio || 1;
+      this._origin = m.containerPointToLayerPoint([0, 0]);
+      L.DomUtil.setPosition(this._canvas, this._origin);
+      this._canvas.width = size.x * dpr; this._canvas.height = size.y * dpr;
+      this._canvas.style.width = size.x + "px"; this._canvas.style.height = size.y + "px";
+      this._ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this._w = size.x; this._h = size.y;
+      const n = Math.min(4500, Math.round(size.x * size.y / 260));
+      this._particles = Array.from({ length: n }, () => this._spawn(true));
+      if (!this._raf) this._loop();
+    },
+    _spawn(randomAge) {
+      // uniformly over the VISIBLE map, so zooming in never starves the view
+      const ll = this._map.containerPointToLatLng([Math.random() * this._w, Math.random() * this._h]);
+      return { lat: ll.lat, lng: ll.lng, age: randomAge ? (Math.random() * MAX_AGE) | 0 : 0 };
+    },
+    _loop() {
+      this._raf = requestAnimationFrame(() => this._loop());
+      if (!field) return;
+      const ctx = this._ctx, m = this._map;
+      // fade trails
+      ctx.globalCompositeOperation = "destination-in";
+      ctx.fillStyle = "rgba(0,0,0,0.93)";
+      ctx.fillRect(0, 0, this._w, this._h);
+      ctx.globalCompositeOperation = "source-over";
+      const paths = SPEED_BINS.map(() => new Path2D());
+      for (let p of this._particles) {
+        if (++p.age > MAX_AGE) { Object.assign(p, this._spawn(false)); continue; }
+        const wv = field.sample(p.lat, p.lng);
+        if (!wv) { Object.assign(p, this._spawn(false)); continue; }
+        const a = m.latLngToContainerPoint([p.lat, p.lng]);
+        // earth-relative wind on a conformal (Web Mercator) map: east = +x, north = -y
+        const bx = a.x + wv.u * PX_PER_MS, by = a.y - wv.v * PX_PER_MS;
+        const ll = m.containerPointToLatLng([bx, by]);
+        p.lat = ll.lat; p.lng = ll.lng;
+        if (bx < 0 || by < 0 || bx > this._w || by > this._h) { Object.assign(p, this._spawn(false)); continue; }
+        const s = Math.hypot(wv.u, wv.v);
+        let bin = 0; while (s > SPEED_BINS[bin][0]) bin++;
+        paths[bin].moveTo(a.x, a.y); paths[bin].lineTo(bx, by);
+      }
+      ctx.lineWidth = 2; ctx.lineCap = "round";
+      paths.forEach((pth, i) => { ctx.strokeStyle = SPEED_BINS[i][1]; ctx.stroke(pth); });
+    }
+  });
+  const windLayer = new WindLayer().addTo(map);
 
-  
-  
-  if (dataA.meta?.run) {
-    windTime.baseUTC = new Date(
-      dataA.meta.run.endsWith("Z")
-        ? dataA.meta.run
-        : dataA.meta.run + "Z"
-    );
-  } else {
-    windTime.baseUTC = null;
+  document.getElementById("legend").innerHTML = SPEED_BINS.map(([hi, c], i) => {
+    const lo = i ? SPEED_BINS[i - 1][0] : 0;
+    const lbl = hi === Infinity ? `${Math.round(lo * 3.6)}+ km/h` : `${Math.round(lo * 3.6)}–${Math.round(hi * 3.6)}`;
+    return `<span><i style="background:${c}"></i>${lbl}</span>`;
+  }).join("");
+
+  // ---------- time control ----------
+  let catalogue = [], hours = [];     // hours: selectable times (ms), hourly from now to the last forecast
+  const slider = document.getElementById("slider"), nowBtn = document.getElementById("nowBtn");
+  const statusEl = document.getElementById("status"), sliderLabel = document.getElementById("sliderLabel");
+  let following = true;               // "Now" mode: keep tracking the clock
+
+  async function showTime(t) {
+    let i = catalogue.findIndex(e => e.t > t);
+    if (i === -1) i = catalogue.length;
+    const a = catalogue[Math.max(0, i - 1)], b = catalogue[Math.min(catalogue.length - 1, i)];
+    statusEl.innerHTML = "Loading wind…";
+    const [sa, sb2] = await Promise.all([loadSnapshot(a), loadSnapshot(b)]);
+    field = makeField(sa, sb2, t);
+    const src = field.w < 0.5 ? sa : sb2;
+    statusEl.innerHTML =
+      `<b>10 m wind valid ${fmtLocal(t)}</b> (${fmtUTC(t)})<br>` +
+      `HRDPS ${fmtUTC(src.run).slice(11)} run, ` +
+      `${a === b ? `+${a.lead} h` : `blended +${a.lead} h → +${b.lead} h`} ` +
+      `(issued ${fmtLocal(src.run)})`;
+    sliderLabel.textContent = following ? "Now" : fmtLocal(t);
   }
 
-  
-  const midLat = dataA.grid.la1 - (dataA.grid.dy * dataA.grid.ny / 2);
-  const midLon = dataA.grid.lo1 + (dataA.grid.dx * dataA.grid.nx / 2);
-  
-  const test = field.sample(midLat, midLon);
-  console.log("MID GRID TEST:", test);
+  async function refresh() {
+    try {
+      catalogue = await loadCatalogue();
+      if (!catalogue.length) throw new Error("no wind files in the catalogue");
+      const now = Date.now(), first = Math.ceil(now / HOUR) * HOUR, last = catalogue[catalogue.length - 1].t;
+      hours = [now];
+      for (let t = first; t <= last; t += HOUR) hours.push(t);
+      slider.max = hours.length - 1; slider.disabled = false; nowBtn.disabled = false;
+      if (following) { slider.value = 0; await showTime(now); }
+    } catch (e) {
+      statusEl.innerHTML = `<b style="color:#ff8080">Wind unavailable:</b> ${e.message}`;
+      console.error(e);
+    }
+  }
 
-  
-  console.log("GRID BOUNDS:", {
-    latMax: dataA.grid.la1,
-    latMin: dataA.grid.la1 - dataA.grid.dy * (dataA.grid.ny - 1),
-    lonMin: dataA.grid.lo1,
-    lonMax: dataA.grid.lo1 + dataA.grid.dx * (dataA.grid.nx - 1)
+  slider.addEventListener("input", () => {
+    following = Number(slider.value) === 0;
+    showTime(following ? Date.now() : hours[Number(slider.value)]);
   });
-  
-  
-  info.textContent = "Wind loaded (particles running)";
-  return field;
-}   
+  nowBtn.addEventListener("click", () => { following = true; slider.value = 0; showTime(Date.now()); });
 
+  refresh();
+  setInterval(refresh, 10 * 60e3);                       // new runs arrive every few hours
+  setInterval(() => { if (following && catalogue.length) showTime(Date.now()); }, 60e3);
 
-
-    
-    loadWind().then(f => {
-      windLayer.setField(f);
-    
-      document.getElementById("info").innerHTML = getWindTimeDiagnostics();
-    
-      setInterval(() => {
-        document.getElementById("info").innerHTML = getWindTimeDiagnostics();
-      }, 60000);
-
-      scheduleHourlyRefresh();
-    });
-    
-        
+  // ---------- click for the value under the cursor ----------
+  const compass = d => ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"][Math.round(d / 22.5) % 16];
+  map.on("click", e => {
+    if (!field) return;
+    const w = field.sample(e.latlng.lat, e.latlng.lng);
+    const html = !w ? "No wind data at this location" : (() => {
+      const spd = Math.hypot(w.u, w.v), from = (270 - Math.atan2(w.v, w.u) * 180 / Math.PI + 360) % 360;
+      return `<b>Wind from ${compass(from)} (${from.toFixed(0)}°)</b><br>` +
+             `${(spd * 3.6).toFixed(0)} km/h (${spd.toFixed(1)} m/s)<br>` +
+             `<span style="color:#666">HRDPS model, 10 m, valid ${fmtLocal(field.t)}</span>`;
+    })();
+    L.popup().setLatLng(e.latlng).setContent(html).openOn(map);
+  });
   </script>
 </body>
 </html>

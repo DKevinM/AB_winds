@@ -79,7 +79,9 @@ class LocalMetStore(bc.MetStoreV2):
         self.grid = self.snaps[0].grid
 
     def _load_cached(self, path, use_cache):
-        key = os.path.basename(path).replace(".json.gz", ".npz")
+        # ".g2": grid_version 2 files (regular north-up grid, earth-relative winds,
+        # 2026-10-13). Caches built from the old misplaced layout are never reused.
+        key = os.path.basename(path).replace(".json.gz", ".g2.npz")
         cpath = os.path.join(CACHE_DIR, key)
         if use_cache and os.path.exists(cpath):
             try:

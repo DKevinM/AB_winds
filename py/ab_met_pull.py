@@ -6,6 +6,8 @@ import xarray as xr
 
 from supabase import create_client
 
+from hrdps_regrid import regridder_for, GRID_VERSION
+
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
@@ -167,14 +169,6 @@ def download(url):
     f.close()
     return f.name
 
-def crop(ds):
-    lon = ds.longitude % 360
-    mask = (ds.latitude >= AB_LAT_MIN) & (ds.latitude <= AB_LAT_MAX) & \
-           (lon >= AB_LON_MIN % 360) & (lon <= AB_LON_MAX % 360)
-    return ds.where(mask, drop=True)
-
-
-
 def process_run(run):
 
     print("Processing run:", run.isoformat())
@@ -199,34 +193,33 @@ def process_run(run):
 
                 any_success = True
 
+                # HRDPS is on a rotated grid: resample onto the regular north-up
+                # lat/lon grid every reader assumes (see hrdps_regrid.py).
+                rg = regridder_for(tmp)
                 ds = xr.open_dataset(tmp, engine="cfgrib")
-                sub = crop(ds)
+                arr = ds.to_array().values[0]
+                ds.close()
 
-                lats = sub.latitude.values
-                lons = sub.longitude.values
-                lons = np.where(lons > 180, lons - 360, lons)
-
-                ny, nx = lats.shape if lats.ndim == 2 else (len(lats), len(lons))
-
-                lat_max = float(np.nanmax(lats))
-                lon_min = float(np.nanmin(lons))
-
-                dx = float((np.nanmax(lons) - np.nanmin(lons)) / (nx - 1))
-                dy = float((lat_max - float(np.nanmin(lats))) / (ny - 1))
-
-                grid = {
-                    "lo1": lon_min,
-                    "la1": lat_max,
-                    "dx": dx,
-                    "dy": dy,
-                    "nx": nx,
-                    "ny": ny
-                }
-
+                grid = rg.grid
                 key = f"{var.lower()}{lvl.replace('AGL-','').replace('m','')}"
-                fields_out[key] = sub.to_array().values.astype("float32").tolist()
+                fields_out[key] = rg.resample(arr)
 
                 os.remove(tmp)
+
+        # UGRD/VGRD are relative to the rotated grid axes; turn them to true east/north.
+        if fields_out:
+            for h in LEVELS_AGL:
+                uk, vk = f"ugrd{h}", f"vgrd{h}"
+                if uk in fields_out and vk in fields_out:
+                    fields_out[uk], fields_out[vk] = rg.earth_relative(fields_out[uk], fields_out[vk])
+                elif uk in fields_out or vk in fields_out:
+                    # an unrotated lone component would be silently wrong
+                    fields_out.pop(uk, None)
+                    fields_out.pop(vk, None)
+                    print(f" Dropped level {h} m: only one wind component downloaded")
+            # 0.01 precision (m/s, K, %, m) is well inside model accuracy and keeps
+            # the JSON compact; float64 so values serialize as e.g. 1.23, not 1.2300000190734863
+            fields_out = {k: [np.round(a.astype(np.float64), 2).tolist()] for k, a in fields_out.items()}
 
         if not any_success:
             print(f"Stopping at lead {lead} — no data available")
@@ -236,7 +229,9 @@ def process_run(run):
             "meta": {
                 "run": run.isoformat()+"Z",
                 "lead": lead,
-                "valid": (run + dt.timedelta(hours=lead)).isoformat()+"Z"
+                "valid": (run + dt.timedelta(hours=lead)).isoformat()+"Z",
+                "grid_version": GRID_VERSION,
+                "winds": "earth-relative (u east, v north), m/s"
             },
             "grid": grid,
             "fields": fields_out
