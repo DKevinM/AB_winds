@@ -35,7 +35,10 @@ export LON=$(python3 -c "import json; print(json.load(open('trigger_request.json
 export TIME_LOCAL=$(python3 -c "import json; print(json.load(open('trigger_request.json'))['time_local'])")
 export HOURS=$(python3 -c "import json; print(json.load(open('trigger_request.json'))['hours'])")
 
-if python3 odour/backtraj_core.py; then
+# 2026-10-13: physics-based LS + Gaussian puff model (odour/run_dispersion.py)
+# replaces odour/backtraj_core.py - same inputs and the same three map files,
+# plus footprint maps. Roll back by pointing this line at backtraj_core.py.
+if python3 odour/run_dispersion.py; then
   python3 - <<'PYEOF'
 import json, datetime
 req = json.load(open("trigger_request.json"))
@@ -66,6 +69,9 @@ fi
   if [ -f odour_data/backtraj_windseries.json ]; then
     git add odour_data/backtraj_windseries.json
   fi
+  for f in odour_data/source_ranking.json odour_data/model_info.json; do
+    if [ -f "$f" ]; then git add "$f"; fi
+  done
 
   if git diff --cached --quiet; then
       echo "No changes to commit."

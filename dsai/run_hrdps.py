@@ -16,7 +16,11 @@ import datetime as dt
 from stations import STATIONS
 
 AB_WINDS_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BACKTRAJ_SCRIPT = os.path.join(AB_WINDS_ROOT, "odour", "backtraj_core.py")
+# 2026-10-13: the physics-based LS model (odour/run_dispersion.py) replaces
+# backtraj_core.py's random walk - same env interface and output files.
+# DSAI compares against HYSPLIT paths that run 100+ km, so the 25 km travel
+# limit used for odour work is switched off here (RADIUS_KM=0 below).
+BACKTRAJ_SCRIPT = os.path.join(AB_WINDS_ROOT, "odour", "run_dispersion.py")
 RUNS_DIR = "/opt/airquality/dsai_data/hrdps_runs"
 PYTHON_EXEC = "/opt/airquality/venv/bin/python3"
 
@@ -67,6 +71,7 @@ def run_hrdps(station, event_dt, duration_hours, direction="backward", heights_m
     if heights_m is not None:
         env["HEIGHTS_M"] = ",".join(str(h) for h in heights_m)
     env["OUTDIR"] = outdir
+    env["RADIUS_KM"] = "0"
 
     # Real timed 24h run measured ~7min (2026-09-13) - 600s gives
     # genuine margin rather than the 180/300s first guessed and then

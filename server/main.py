@@ -80,7 +80,8 @@ def _run_job(job_id,lat,lon,time_local,hours):
     env=os.environ.copy()
     env.update({'LAT':str(lat),'LON':str(lon),'TIME_LOCAL':time_local,'HOURS':str(hours),'OUTDIR':str(outdir)})
     try:
-        r=subprocess.run([sys.executable,'odour/backtraj_core.py'],cwd=str(ROOT),env=env,capture_output=True,text=True,timeout=JOB_TIMEOUT_SECONDS)
+        # 2026-10-13: run_dispersion.py (LS + Gaussian puff) replaces backtraj_core.py; same output files
+        r=subprocess.run([sys.executable,'odour/run_dispersion.py'],cwd=str(ROOT),env=env,capture_output=True,text=True,timeout=JOB_TIMEOUT_SECONDS)
         if r.returncode!=0:
             with JOBS_LOCK:JOBS[job_id].update(status='failed',error=(r.stderr or r.stdout)[-4000:])
             return
