@@ -109,9 +109,23 @@
     Plotly.newPlot(plotId, [trace], layout, { displayModeBar: false, responsive: false });
 
     const latest = windSeries[0];
-    document.getElementById(captionId).innerHTML = `
-      <b>Wind FROM ${Math.round(latest.wd)}° at ${latest.ws.toFixed(1)} m/s (now)</b><br>
-      <span style="opacity:0.65;">last ${n}h &middot; newest = solid, oldest = faint</span>
-    `;
+    const sel = windSeries.find((w) => w.selected) || latest;
+    if (sel.time_local) {
+      // Model-run series (odour/run_dispersion.py, 2026-10-13): entries carry
+      // their own times, so label the model's window, not "now / last Nh".
+      const oldest = windSeries[n - 1];
+      const span = Math.round((Date.parse(latest.time_utc) - Date.parse(oldest.time_utc)) / 3600000);
+      const rel = sel.direction === "forward" ? "after" : "before";
+      document.getElementById(captionId).innerHTML = `
+        <b>Wind FROM ${Math.round(sel.wd)}° at ${sel.ws.toFixed(1)} m/s at ${sel.time_local}</b><br>
+        <span style="opacity:0.65;">model window ${oldest.time_local} &ndash; ${latest.time_local} (${span} h ${rel})
+        &middot; newest = solid, oldest = faint${sel.source ? " &middot; " + sel.source : ""}</span>
+      `;
+    } else {
+      document.getElementById(captionId).innerHTML = `
+        <b>Wind FROM ${Math.round(latest.wd)}° at ${latest.ws.toFixed(1)} m/s (now)</b><br>
+        <span style="opacity:0.65;">last ${n}h &middot; newest = solid, oldest = faint</span>
+      `;
+    }
   };
 })();

@@ -31,6 +31,8 @@ import os
 import sys
 import time
 from pathlib import Path
+
+import numpy as np
 from zoneinfo import ZoneInfo
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -164,11 +166,37 @@ def main():
 
     sgn = 1.0 if direction == "forward" else -1.0
     times = [start + dt.timedelta(hours=sgn * i) for i in range(max(int(hours), 1))]
+
+    # Wind-rose series: hourly over the model's own window (start time and
+    # every hour back, or forward, to start +/- hours), from the SAME wind
+    # the trajectory used - HRDPS 10 m corrected toward station winds when
+    # available. Newest-in-time first (windrose.js draws index 0 solid);
+    # each entry carries its time so the page can label the window instead
+    # of "now / last Nh".
+    tz_local = ZoneInfo("America/Edmonton")
+    corrected = met.correction is not None and getattr(met.correction, "n_obs", 0) > 0
     windseries = []
-    for t in times:
-        w = bc.wind_from_at(store, lat, lon, t)   # 10 m AGL (z_m default) - correct here
-        if w:
-            windseries.append({"ws": round(w[1], 2), "wd": round(w[0], 1), "hours": 1})
+    for i in range(max(int(round(hours)), 1) + 1):
+        t = start + dt.timedelta(hours=sgn * i)
+        try:
+            s1 = met.sample(t, np.array([lat]), np.array([lon]))
+            ue, vn = met.mean_wind(s1, np.array([10.0]))
+        except (KeyError, ValueError):
+            continue
+        u, v = float(ue[0]), float(vn[0])
+        if not (math.isfinite(u) and math.isfinite(v)):
+            continue
+        windseries.append({
+            "ws": round(math.hypot(u, v), 2),
+            "wd": round((math.degrees(math.atan2(-u, -v)) + 360.0) % 360.0, 1),   # FROM
+            "hours": 1,
+            "time_utc": t.isoformat(),
+            "time_local": t.astimezone(tz_local).strftime("%b %-d %H:%M"),
+            "selected": i == 0,
+            "direction": direction,
+            "source": "HRDPS 10 m, station-corrected" if corrected else "HRDPS 10 m",
+        })
+    windseries.sort(key=lambda w: w["time_utc"], reverse=True)
     dump("backtraj_windseries.json", windseries)
 
     hm = gp.hourly_met(met, lat, lon, times, height_m=10.0)
