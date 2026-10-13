@@ -1,10 +1,9 @@
 {
-  "request_id": "dd5c6613-7f1e-424b-a505-740f21c47dcf",
+  "request_id": "29713cc1-c639-4f43-af29-2569856572a6",
   "lat": 53.5288806180433,
   "lon": -114.469299316406,
   "time_local": "2026-10-08T18:00",
   "hours": 4.0,
-  "requested_at": "2026-10-13T18:48:29.231080+00:00",
-  "status": "completed",
-  "completed_at": "2026-10-13T18:58:06.913502+00:00"
+  "requested_at": "2026-10-13T19:02:08.592749+00:00",
+  "status": "pending"
 }
