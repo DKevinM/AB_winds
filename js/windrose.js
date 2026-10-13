@@ -116,17 +116,19 @@
       const oldest = windSeries[n - 1];
       const span = Math.round((Date.parse(latest.time_utc) - Date.parse(oldest.time_utc)) / 3600000);
       const rel = sel.direction === "forward" ? "after" : "before";
-      // same day -> "Oct 8 14:00 – 18:00"; crossing midnight keeps both dates
+      // three short lines so the panel stays as narrow as the rose:
+      //   Oct 8 18:00 · from 76° at 2.1 m/s
+      //   4 h before: 14:00–18:00          (dates kept if it crosses midnight)
+      //   solid = newest · station-corrected HRDPS
       const [od, ot] = [oldest.time_local.slice(0, -6), oldest.time_local.slice(-5)];
       const [ld, lt] = [latest.time_local.slice(0, -6), latest.time_local.slice(-5)];
-      const windowTxt = od === ld ? `${od} ${ot} &ndash; ${lt}` : `${oldest.time_local} &ndash; ${latest.time_local}`;
+      const windowTxt = od === ld ? `${ot}&ndash;${lt}` : `${oldest.time_local} &ndash; ${latest.time_local}`;
+      const src = (sel.source || "").includes("station-corrected") ? "station-corrected HRDPS" : "HRDPS";
       document.getElementById(captionId).innerHTML = `
-        <div style="line-height:1.45;">
-          <b>${sel.time_local}</b><br>
-          Wind FROM ${Math.round(sel.wd)}° at ${sel.ws.toFixed(1)} m/s<br>
-          <span style="opacity:0.8;">Window: ${windowTxt} (${span} h ${rel})</span><br>
-          <span style="opacity:0.65;">newest = solid &middot; oldest = faint</span>
-          ${sel.source ? `<br><span style="opacity:0.65;">${sel.source}</span>` : ""}
+        <div style="line-height:1.4;">
+          <b>${sel.time_local} &middot; from ${Math.round(sel.wd)}° at ${sel.ws.toFixed(1)} m/s</b><br>
+          ${span} h ${rel}: ${windowTxt}<br>
+          <span style="opacity:0.65;">solid = newest &middot; ${src}</span>
         </div>
       `;
     } else {
