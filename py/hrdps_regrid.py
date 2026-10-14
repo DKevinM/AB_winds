@@ -20,7 +20,10 @@ import eccodes
 
 # Target grid: regular lat/lon, row 0 = north edge. ~2.5 km spacing at 54N.
 LAT_N, LAT_S = 62.0, 48.0
-LON_W, LON_E = -125.0, -88.0
+# West edge moved -125 -> -134 on 2026-10-14 to take in the BC coast (Squamish, Vancouver Island,
+# Prince Rupert, Haida Gwaii) and the Pacific approach. HRDPS covers it fully (checked: no blank cells).
+# Readers take lo1/nx from each file's header, so older -125 files and newer -134 files both work.
+LON_W, LON_E = -134.0, -88.0
 DLAT = 0.0225
 DLON = 0.0375
 

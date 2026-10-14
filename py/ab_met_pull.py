@@ -101,7 +101,7 @@ def insert_metadata_from_run(run, lead, storage_path):
 BASE = "https://dd.weather.gc.ca/today/model_hrdps/continental/2.5km"
 
 AB_LAT_MIN, AB_LAT_MAX = 48, 62
-AB_LON_MIN, AB_LON_MAX = -125, -88
+AB_LON_MIN, AB_LON_MAX = -134, -88   # informational; the stored grid is set in hrdps_regrid.py
 
 LEVELS_AGL = [10, 40, 80, 120]
 # HRDPS doesn't publish TMP at 10m (that height is wind-only; temperature's
