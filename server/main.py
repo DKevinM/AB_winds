@@ -160,3 +160,144 @@ def click_status(job_id:str):
         job=CLICK_JOBS.get(job_id)
     if not job:return JSONResponse({'status':'not_found'},status_code=404)
     return job
+
+
+# ---------------------------------------------------------------------------
+# WCAS emergency page: LS + Gaussian puff dispersion, forward OR backward
+# (added 2026-10-15). Proxied as /wcas-emergency/api/ behind that page's
+# password. Same run_dispersion.py as /run, but with the direction exposed
+# and the model's limits enforced HERE, server-side, not just in the page:
+#   - 1..12 h (runtime ~25 s forward / ~75 s backward per 6 h)
+#   - the whole run must sit inside the HRDPS files we actually have
+#     (backward: start - hours >= earliest file; forward: start + hours <=
+#     latest forecast valid time) - otherwise particles run on no wind
+#   - particles stop at RADIUS_KM (25 km, the model's built-in travel limit)
+#   - at most LS_MAX_RUNNING runs at once (CPU), else 429
+# Returns only what the map draws: centre lines, the Gaussian puff footprint
+# trimmed to the cells holding 99% of the weight, the LS touchdown footprint
+# and NPRI source ranking (backward), and the met summary.
+import re as _re
+
+LS_RUNS_DIR = ROOT / 'ls_runs'
+LS_MAX_HOURS = 12
+LS_RADIUS_KM = 25
+LS_MAX_RUNNING = 2
+LS_JOBS = {}
+LS_JOBS_LOCK = threading.Lock()
+EDMONTON_TZ = ZoneInfo('America/Edmonton')
+_MET_RE = _re.compile(r'ab_met_(\d{8})_(\d{2})Z_f(\d{3})\.json\.gz$')
+
+
+def _met_coverage():
+    """(earliest, latest) valid time (UTC) across local HRDPS files."""
+    times = []
+    for f in (ROOT / 'met_data').glob('ab_met_*.json.gz'):
+        m = _MET_RE.search(f.name)
+        if m:
+            run = datetime.strptime(m.group(1) + m.group(2), '%Y%m%d%H').replace(tzinfo=timezone.utc)
+            times.append(run + timedelta(hours=int(m.group(3))))
+    return (min(times), max(times)) if times else (None, None)
+
+
+def _trim_footprint(fc, keep=0.99):
+    feats = sorted(fc.get('features', []), key=lambda f: -(f['properties'].get('weight') or 0))
+    tot = sum(f['properties'].get('weight') or 0 for f in feats) or 1.0
+    out, acc = [], 0.0
+    for f in feats:
+        out.append(f); acc += f['properties'].get('weight') or 0
+        if acc / tot >= keep:
+            break
+    return _round_fc({'type': 'FeatureCollection', 'features': out})
+
+
+def _round_fc(fc, nd=5):
+    """Coordinates to ~1 m, numbers to 4 significant figures - keeps the browser payload small."""
+    if not fc:
+        return fc
+    rc = lambda c: [round(c[0], nd), round(c[1], nd)] if isinstance(c[0], (int, float)) else [rc(x) for x in c]
+    for f in fc.get('features', []):
+        g = f.get('geometry') or {}
+        if 'coordinates' in g:
+            g['coordinates'] = rc(g['coordinates'])
+        f['properties'] = {k: (float(f'{v:.4g}') if isinstance(v, float) else v) for k, v in (f.get('properties') or {}).items()}
+    return fc
+
+
+def _run_ls_job(job_id, lat, lon, time_local, hours, direction):
+    with LS_JOBS_LOCK: LS_JOBS[job_id]['status'] = 'running'
+    outdir = LS_RUNS_DIR / job_id
+    outdir.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env.update({'LAT': str(lat), 'LON': str(lon), 'TIME_LOCAL': time_local, 'HOURS': str(hours),
+                'DIRECTION': direction, 'RADIUS_KM': str(LS_RADIUS_KM), 'OUTDIR': str(outdir)})
+    try:
+        r = subprocess.run([sys.executable, 'odour/run_dispersion.py'], cwd=str(ROOT), env=env,
+                           capture_output=True, text=True, timeout=JOB_TIMEOUT_SECONDS)
+        if r.returncode != 0:
+            with LS_JOBS_LOCK: LS_JOBS[job_id].update(status='failed', error=(r.stderr or r.stdout)[-2000:])
+            return
+        rd = lambda n: json.loads((outdir / n).read_text()) if (outdir / n).exists() else None
+        info = rd('model_info.json') or {}
+        rank = rd('source_ranking.json')
+        result = {
+            'centerlines': _round_fc(rd('backtraj_centerlines.geojson')),
+            'puff_footprint': _trim_footprint(rd('gauss_footprint.geojson') or {}),
+            'ls_footprint': _round_fc(rd('ls_footprint.geojson')) if direction == 'backward' else None,
+            'ls_density': _round_fc(rd('backtraj_density.geojson')),   # where the LS particles were (both directions)
+            'source_ranking': (rank or [])[:10] if isinstance(rank, list) else None,
+            'info': {k: info.get(k) for k in ('direction', 'start_utc', 'hours', 'radius_km', 'exited_at_radius',
+                                              'n_particles_per_height', 'start_heights_m',
+                                              'touchdowns', 'met_at_site', 'station_winds', 'landcover', 'met_source')},
+        }
+        with LS_JOBS_LOCK: LS_JOBS[job_id].update(status='completed', result=result, completed_at=datetime.now(timezone.utc).isoformat())
+    except subprocess.TimeoutExpired:
+        with LS_JOBS_LOCK: LS_JOBS[job_id].update(status='failed', error=f'Model run exceeded {JOB_TIMEOUT_SECONDS}s.')
+    except Exception as ex:
+        with LS_JOBS_LOCK: LS_JOBS[job_id].update(status='failed', error=f'{type(ex).__name__}: {ex}')
+    finally:
+        shutil.rmtree(outdir, ignore_errors=True)   # result is held in memory; nothing to keep on disk
+
+
+@app.get('/ls-limits')
+def ls_limits():
+    first, last = _met_coverage()
+    return {'max_hours': LS_MAX_HOURS, 'radius_km': LS_RADIUS_KM,
+            'met_first_utc': first.isoformat() if first else None, 'met_last_utc': last.isoformat() if last else None}
+
+
+@app.post('/ls-run')
+def ls_run(lat: float = Query(..., ge=48, le=62), lon: float = Query(..., ge=-134, le=-88), time_local: str = Query(...),
+           hours: float = Query(6, ge=1, le=LS_MAX_HOURS), direction: str = Query('backward', pattern='^(forward|backward)$')):
+    try:
+        start = datetime.fromisoformat(time_local).replace(tzinfo=EDMONTON_TZ).astimezone(timezone.utc)
+    except ValueError:
+        return JSONResponse({'error': 'time_local must be like 2026-10-15T14:00:00 (Alberta time)'}, status_code=400)
+    first, last = _met_coverage()
+    if first is None:
+        return JSONResponse({'error': 'No wind data on the server.'}, status_code=503)
+    span = timedelta(hours=hours)
+    lo, hi = (start - span, start) if direction == 'backward' else (start, start + span)
+    if lo < first:
+        return JSONResponse({'error': f'Wind data only starts {first.astimezone(EDMONTON_TZ):%b %d %H:%M} - pick a later time or fewer hours.'}, status_code=400)
+    if hi > last:
+        return JSONResponse({'error': f'The wind forecast only reaches {last.astimezone(EDMONTON_TZ):%b %d %H:%M} - pick an earlier time or fewer hours.'}, status_code=400)
+    with LS_JOBS_LOCK:
+        # forget finished runs after an hour; cap concurrent runs
+        for k in [k for k, j in LS_JOBS.items() if j['status'] in ('completed', 'failed')
+                  and datetime.fromisoformat(j['submitted_at']) < datetime.now(timezone.utc) - timedelta(hours=1)]:
+            LS_JOBS.pop(k, None)
+        if sum(j['status'] in ('pending', 'running') for j in LS_JOBS.values()) >= LS_MAX_RUNNING:
+            return JSONResponse({'error': 'The model is busy with other runs - try again in a minute.'}, status_code=429)
+        job_id = uuid.uuid4().hex[:12]
+        LS_JOBS[job_id] = {'status': 'pending', 'submitted_at': datetime.now(timezone.utc).isoformat(), 'lat': lat, 'lon': lon,
+                           'time_local': time_local, 'hours': hours, 'direction': direction}
+    threading.Thread(target=_run_ls_job, args=(job_id, lat, lon, time_local, hours, direction), daemon=True).start()
+    return {'job_id': job_id, 'status': 'pending'}
+
+
+@app.get('/ls-status/{job_id}')
+def ls_status(job_id: str):
+    with LS_JOBS_LOCK:
+        job = LS_JOBS.get(job_id)
+    if not job: return JSONResponse({'status': 'not_found'}, status_code=404)
+    return job
