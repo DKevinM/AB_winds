@@ -1,0 +1,3 @@
+name,reason,added
+EASTEND CYPRESS (AUT),"wind direction persistently ~140 deg off the model and its neighbours (80% of windy hours >90 deg off, 2026-10-15..18) - likely misaligned vane",2026-10-18
+VAUXHALL CDA CS,"wind direction persistently ~100 deg off the model and its neighbours (63% of windy hours >90 deg off, 2026-10-15..18) - likely misaligned vane",2026-10-18
