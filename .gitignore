@@ -3,4 +3,5 @@ __pycache__/
 live_runs/
 click_runs/
 met_data/
+met_data_sk/
 dsai/data/
