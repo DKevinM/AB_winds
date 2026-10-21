@@ -312,8 +312,9 @@ def run_ls(met, start_lat, start_lon, start_time_utc, hours=5.0,
             if alive.sum() >= cfg.centerline_min_frac * n:
                 track.append((t, float(lat[alive].mean()), float(lon[alive].mean()), float(z[alive].mean())))
             if k % cfg.record_every == 0:
-                for i in np.flatnonzero(alive):
-                    cloud_points.append((t, float(lat[i]), float(lon[i]), float(z[i]), float(z_start)))
+                m_ = int(alive.sum())
+                cloud_points.extend(zip([t] * m_, lat[alive].tolist(), lon[alive].tolist(), z[alive].tolist(),
+                                        [float(z_start)] * m_))
             if k == n_adv or not np.any(alive):
                 break
 
@@ -393,7 +394,10 @@ def run_ls(met, start_lat, start_lon, start_time_utc, hours=5.0,
                     xd_old = xd[act]
                     xd_new = xd_old + dxe
                     for xp in cross:
-                        hit = (xd_old < xp) & (xd_new >= xp)
+                        if sgn > 0:
+                            hit = (xd_old < xp) & (xd_new >= xp)
+                        else:   # backward validation (2026-10-21): plane xp metres UPWIND of the receptor
+                            hit = (xd_old > -xp) & (xd_new <= -xp)
                         if np.any(hit):
                             zf = z_a[hit]
                             ok = np.abs(zf - crossing_z) <= crossing_dz / 2.0
@@ -415,8 +419,9 @@ def run_ls(met, start_lat, start_lon, start_time_utc, hours=5.0,
                         deposited_total += int(dep.sum())
                     if sgn < 0:
                         tt = t + dt.timedelta(seconds=sgn * float(cfg.dt_adv))
-                        for la_i, lo_i, w_i in zip(la_new[below], lo_new[below], wa[below]):
-                            touchdowns.append((tt, float(la_i), float(lo_i), float(abs(w_i)), float(z_start)))
+                        m_ = int(below.sum())
+                        touchdowns.extend(zip([tt] * m_, la_new[below].tolist(), lo_new[below].tolist(),
+                                              np.abs(wa[below]).tolist(), [float(z_start)] * m_))
                     z_new = np.where(below, 2.0 * zr - z_new, z_new)
                     wa = np.where(below, -wa, wa)
 
@@ -450,6 +455,69 @@ def run_ls(met, start_lat, start_lon, start_time_utc, hours=5.0,
     return LSResult(centerlines, cloud_points, touchdowns,
                     n_particles=int(n_particles) * len(start_heights_m),
                     deposited=deposited_total, crossings=cross, exited=exited_total)
+
+
+# ---------------------------------------------------------------------------
+# Parallel runs (2026-10-21): split the particles across forked worker
+# processes. Each worker inherits `met` through fork (nothing is pickled on
+# the way in) and runs run_ls on its share with its own seed; results are
+# merged. Statistically the same as one run_ls call with all the particles,
+# not bit-identical (different random streams). Linux only (fork).
+# ---------------------------------------------------------------------------
+
+_PAR = {}
+
+
+def _par_worker(i):
+    a = _PAR
+    cfg = a["cfg"]
+    cfg_i = LSConfig(**{**cfg.__dict__, "seed": cfg.seed + 7919 * (i + 1)})
+    return run_ls(a["met"], a["lat"], a["lon"], a["t"], hours=a["hours"], n_particles=a["chunks"][i],
+                  start_heights_m=a["heights"], direction=a["direction"], cfg=cfg_i, **a["kw"])
+
+
+def run_ls_parallel(met, start_lat, start_lon, start_time_utc, hours=5.0, n_particles=500,
+                    start_heights_m=(10.0, 40.0, 80.0), direction="backward",
+                    cfg: Optional[LSConfig] = None, workers: Optional[int] = None, **kw):
+    """run_ls with the particles split across `workers` processes (default: cores - 1, max 4).
+    Same arguments and LSResult as run_ls. Centrelines are the mean of the workers' centrelines
+    at each time (equal particle shares)."""
+    import multiprocessing as mp
+    import os as _os
+    cfg = cfg or LSConfig()
+    workers = workers or max(1, min(4, (_os.cpu_count() or 2) - 1))
+    workers = min(workers, max(1, int(n_particles) // 50))
+    if workers <= 1:
+        return run_ls(met, start_lat, start_lon, start_time_utc, hours=hours, n_particles=n_particles,
+                      start_heights_m=start_heights_m, direction=direction, cfg=cfg, **kw)
+    base, extra = divmod(int(n_particles), workers)
+    chunks = [base + (1 if i < extra else 0) for i in range(workers)]
+    _PAR.clear()
+    _PAR.update(met=met, lat=start_lat, lon=start_lon, t=start_time_utc, hours=hours, chunks=chunks,
+                heights=start_heights_m, direction=direction, cfg=cfg, kw=kw)
+    with mp.get_context("fork").Pool(workers) as pool:
+        parts = pool.map(_par_worker, range(workers))
+    _PAR.clear()
+
+    centerlines = []
+    for h in range(len(start_heights_m)):
+        by_t = {}
+        for p in parts:
+            for (t, la, lo, z) in p.centerlines[h]["track"]:
+                by_t.setdefault(t, []).append((la, lo, z))
+        track = [(t, *(float(np.mean([v[j] for v in vals])) for j in range(3)))
+                 for t, vals in sorted(by_t.items(), key=lambda kv: kv[0], reverse=(direction != "forward"))]
+        centerlines.append({"z0": float(start_heights_m[h]), "track": track})
+    cross = None
+    if parts[0].crossings is not None:          # each part is already normalised by its own N
+        cross = {xp: float(sum(p.crossings[xp] * c for p, c in zip(parts, chunks)) / sum(chunks))
+                 for xp in parts[0].crossings}
+    return LSResult(centerlines,
+                    [c for p in parts for c in p.cloud_points],
+                    [td for p in parts for td in p.touchdowns],
+                    n_particles=sum(p.n_particles for p in parts),
+                    deposited=sum(p.deposited for p in parts), crossings=cross,
+                    exited=sum(p.exited for p in parts))
 
 
 # ---------------------------------------------------------------------------

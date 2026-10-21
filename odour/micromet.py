@@ -206,17 +206,8 @@ def turbulence(z, ustar, L, zi, wstar=0.0, C0=C0_DEFAULT):
     sigu = sigu * decay_h
     sigv = sigv * decay_h
 
-    # --- vertical ---
-    sigw_sl = SIGW_NEUTRAL * ustar * np.where(unstable, (1.0 - 3.0 * np.minimum(zeta, 0.0)) ** (1.0 / 3.0), 1.0)
-    # unstable: the larger of the surface-layer (free-convection) form and
-    # the mixed-layer form - NOT their sum, which double-counts convective
-    # variance near the ground (K ~ sigma_w^4/eps, so it overstates mixing
-    # ~2x; caught by the Prairie Grass check)
-    sigw2 = np.where(unstable,
-                     np.maximum(sigw_sl ** 2,
-                                1.8 * wstar ** 2 * frac ** (2.0 / 3.0) * (1.0 - 0.8 * frac) ** 2),
-                     (sigw_sl * (1.0 - 0.9 * frac) ** 0.75) ** 2)
-    sigw = np.sqrt(sigw2)
+    # --- vertical (shared with dsigw2_dz, which needs only this) ---
+    sigw = _sigw(z, ustar, zeta, unstable, frac, wstar, above)
 
     # --- dissipation ---
     zeta_c = np.where(unstable, zeta, np.minimum(zeta, 5.0))
@@ -228,12 +219,10 @@ def turbulence(z, ustar, L, zi, wstar=0.0, C0=C0_DEFAULT):
     # residual layer above zi
     sigu = np.where(above, SIGMA_FLOOR * 2, sigu)
     sigv = np.where(above, SIGMA_FLOOR * 2, sigv)
-    sigw = np.where(above, SIGMA_FLOOR, sigw)
     eps = np.where(above, EPS_FLOOR * 10, eps)
 
     sigu = np.maximum(sigu, 2 * SIGMA_FLOOR)
     sigv = np.maximum(sigv, 2 * SIGMA_FLOOR)
-    sigw = np.maximum(sigw, SIGMA_FLOOR)
     eps = np.maximum(eps, EPS_FLOOR)
 
     TLu = 2.0 * sigu ** 2 / (C0 * eps)
@@ -243,15 +232,46 @@ def turbulence(z, ustar, L, zi, wstar=0.0, C0=C0_DEFAULT):
             "TLu": TLu, "TLv": TLv, "TLw": TLw}
 
 
+def _sigw(z, ustar, zeta, unstable, frac, wstar, above):
+    """sigma_w as turbulence() returns it (inputs already prepared there).
+    Split out 2026-10-21 so dsigw2_dz no longer computes the full turbulence
+    set twice per sub-step (~half the LS run time); same arithmetic, same result."""
+    sigw_sl = SIGW_NEUTRAL * ustar * np.where(unstable, (1.0 - 3.0 * np.minimum(zeta, 0.0)) ** (1.0 / 3.0), 1.0)
+    # unstable: the larger of the surface-layer (free-convection) form and
+    # the mixed-layer form - NOT their sum, which double-counts convective
+    # variance near the ground (K ~ sigma_w^4/eps, so it overstates mixing
+    # ~2x; caught by the Prairie Grass check)
+    sigw2 = np.where(unstable,
+                     np.maximum(sigw_sl ** 2,
+                                1.8 * wstar ** 2 * frac ** (2.0 / 3.0) * (1.0 - 0.8 * frac) ** 2),
+                     (sigw_sl * (1.0 - 0.9 * frac) ** 0.75) ** 2)
+    sigw = np.sqrt(sigw2)
+    sigw = np.where(above, SIGMA_FLOOR, sigw)          # residual layer above zi
+    return np.maximum(sigw, SIGMA_FLOOR)
+
+
+def sigma_w(z, ustar, L, zi, wstar=0.0):
+    """sigma_w alone, identical to turbulence(...)["sigw"]."""
+    z = np.maximum(_arr(z), 0.05)
+    ustar = _arr(ustar)
+    L = _arr(L)
+    zi = np.maximum(_arr(zi), 50.0)
+    wstar = _arr(wstar)
+    return _sigw(z, ustar, z / L, L < 0, np.clip(z / zi, 0.0, 1.0), wstar, z >= zi)
+
+
 def dsigw2_dz(z, ustar, L, zi, wstar=0.0, dz=0.5):
     """Vertical gradient of sigma_w^2 (centred difference) - needed for the
     Thomson (1987) well-mixed drift term. Done numerically so it stays
-    consistent with whatever turbulence() returns."""
+    consistent with whatever turbulence() returns. z+dz and z-dz are
+    evaluated in one call (2026-10-21)."""
     z = _arr(z)
+    n = z.size
     zp = z + dz
     zm = np.maximum(z - dz, 0.05)
-    sp = turbulence(zp, ustar, L, zi, wstar)["sigw"] ** 2
-    sm = turbulence(zm, ustar, L, zi, wstar)["sigw"] ** 2
+    two = lambda a: np.concatenate([np.broadcast_to(_arr(a), z.shape).ravel()] * 2)
+    s2 = sigma_w(np.concatenate([zp.ravel(), zm.ravel()]), two(ustar), two(L), two(zi), two(wstar)) ** 2
+    sp, sm = s2[:n].reshape(z.shape), s2[n:].reshape(z.shape)
     return (sp - sm) / (zp - zm)
 
 

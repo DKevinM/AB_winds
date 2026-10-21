@@ -42,6 +42,8 @@ import backtraj_core as bc        # noqa: E402  (MetStoreV2, GeoJSON writers)
 import ls_model as ls             # noqa: E402
 import gaussian_plume as gp       # noqa: E402
 import gaussian_puff as gpf       # noqa: E402
+import peak_to_mean as ptm        # noqa: E402
+import ensemble as en             # noqa: E402
 import micromet as mm             # noqa: E402
 import station_obs as so          # noqa: E402
 import landcover as lc            # noqa: E402
@@ -209,7 +211,29 @@ def main():
         # unit source at 10 m (typical NPRI stack/vent height class) seen at a 1.5 m receptor
         field = gpf.run_puffs(met, lat, lon, start, hours=hours, direction="backward",
                               H=10.0, z_eval=1.5, radius_km=radius_km or 25.0)
-        dump("source_ranking.json", _rank_from_field(field, _npri_sources(lat, lon, radius_km or RANK_RADIUS_KM)))
+        ranking = _rank_from_field(field, _npri_sources(lat, lon, radius_km or RANK_RADIUS_KM))
+        # hour-mean C/Q -> perceived peaks (NSW 1 s, Ontario 10 min); see peak_to_mean.py (2026-10-21)
+        pg_dom = ptm.dominant_class([h["pg"] for h in hm]) if hm else "D"
+        notes["peak_to_mean"] = ptm.describe(pg_dom)
+        ranking = ptm.annotate(ranking, pg_dom)
+        # opt-in uncertainty ensemble (ENSEMBLE=<members>, e.g. 12); see ensemble.py (2026-10-21)
+        n_ens = int(os.environ.get("ENSEMBLE", "0") or 0)
+        if n_ens > 1:
+            t_e = time.time()
+            ens = en.run_ensemble(met, lat, lon, start, hours=hours, members=n_ens,
+                                  n_particles=max(200, n_particles), start_heights_m=(min(heights),),
+                                  sigma_dir_deg=float(os.environ.get("ENS_SIGMA_DIR", "20")),
+                                  sigma_speed=float(os.environ.get("ENS_SIGMA_SPEED", "0.3")),
+                                  half_width_km=min(radius_km or 25.0, 25.0))
+            dump("ensemble_footprint.geojson", ens.to_geojson())
+            for r in ranking:
+                r["ensemble_probability"] = ens.source_probability(r["lat"], r["lon"])
+                r["ensemble_sector_share"] = round(ens.sector_share(r["lat"], r["lon"]), 3)
+            notes["ensemble"] = {"members": n_ens, "sigma_dir_deg": ens.sigma_dir_deg,
+                                 "sigma_speed": ens.sigma_speed, "runtime_s": round(time.time() - t_e, 1),
+                                 "probability": "share of members with the source bearing inside the central 80% "
+                                                "of the footprint's directions at the source's distance"}
+        dump("source_ranking.json", ranking)
     dump("gauss_footprint.geojson", gp.grid_to_geojson(field))
     puff_secs = time.time() - t1
 
