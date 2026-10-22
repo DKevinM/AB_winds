@@ -40,6 +40,17 @@
       max-width: 240px;
     }
     #windRosePanel.active { display: block; }
+    /* likely-source panel (2026-10-22): LS footprint + facilities the air passed over */
+    #srcPanel {
+      display: none; position: absolute; top: 70px; left: 50px; z-index: 1000;
+      background: rgba(20,20,20,0.88); color: #eee; padding: 8px 10px; border-radius: 8px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.4); max-width: 300px; font-size: 12px; line-height: 1.35;
+    }
+    #srcPanel.active { display: block; }
+    #srcPanel b { font-size: 13px; }
+    #srcPanel ol { margin: 6px 0 4px 18px; padding: 0; }
+    #srcPanel .bar { display: inline-block; height: 6px; background: #b07cff; border-radius: 2px; margin-left: 4px; vertical-align: middle; }
+    #srcPanel .note { color: #aaa; font-size: 11px; }
   </style>
 </head>
 
@@ -60,6 +71,7 @@
 
 <div id="map"></div>
 <div id="windRosePanel"></div>
+<div id="srcPanel"></div>
 
 <script>
 
@@ -92,6 +104,8 @@ const centerline80Layer = L.layerGroup().addTo(map);
 // Off by default while trying a thicker centerline instead - still
 // toggleable via the layer control for comparison.
 const densityLayer = L.layerGroup();
+// LS touchdown footprint: where air reaching the clicked point most likely touched the ground (2026-10-22)
+const footprintLayer = L.layerGroup().addTo(map);
 
 const CENTERLINE_LAYERS = { 10: centerline10Layer, 40: centerline40Layer, 80: centerline80Layer };
 
@@ -102,7 +116,8 @@ const overlayMaps = {
   "Trajectory 10m (line)": centerline10Layer,
   "Trajectory 40m (line)": centerline40Layer,
   "Trajectory 80m (line)": centerline80Layer,
-  "Back Trajectory Density": densityLayer
+  "Back Trajectory Density": densityLayer,
+  "Likely source area (LS footprint)": footprintLayer
 };
 
 L.control.layers(null, overlayMaps, { collapsed: false }).addTo(map);
@@ -386,6 +401,7 @@ async function loadTrajectories() {
 
   Object.values(CENTERLINE_LAYERS).forEach(l => l.clearLayers());
   densityLayer.clearLayers();
+  loadFootprint();   // non-fatal, runs alongside
 
   // CENTERLINE, split per start height so each can be switched on/off
   // independently.
@@ -429,6 +445,48 @@ async function loadTrajectories() {
   }).addTo(densityLayer);
 
   return true;
+}
+
+// ----------------------------
+// LIKELY SOURCE AREA + FACILITIES (2026-10-22)
+// ----------------------------
+// ls_footprint.geojson: the LS model's ground touchdowns binned to cells; "weight" = the cell's share of
+// the footprint. source_ranking.json: NPRI facilities within reach, ranked by C/Q for a unit release at
+// 10 m (relative only - no emission amounts are used here). Both are written by the odour run.
+async function loadFootprint() {
+  footprintLayer.clearLayers();
+  const panel = document.getElementById("srcPanel");
+  panel.classList.remove("active");
+  try {
+    const [fr, rr] = await Promise.all([
+      fetch("odour_data/ls_footprint.geojson?t=" + Date.now()),
+      fetch("odour_data/source_ranking.json?t=" + Date.now())
+    ]);
+    if (fr.ok) {
+      const fp = await fr.json();
+      const maxW = Math.max(1e-9, ...fp.features.map(f => f.properties?.weight ?? 0));
+      L.geoJSON(fp, {
+        style: f => ({ color: "#7b3fe4", weight: 0, fillColor: "#7b3fe4",
+                       fillOpacity: 0.75 * Math.sqrt((f.properties?.weight ?? 0) / maxW) }),
+        onEachFeature: (f, layer) => layer.bindTooltip(
+          `Likely source area<br>${((f.properties?.weight ?? 0) * 100).toFixed(1)}% of the footprint`, { sticky: true })
+      }).addTo(footprintLayer);
+    }
+    if (rr.ok) {
+      const rows = (await rr.json()).slice(0, 5);
+      if (rows.length) {
+        const top = rows[0].cq_s_per_m3 || 1;
+        panel.innerHTML = `<b>Facilities the air passed over</b>
+          <ol>${rows.map(r => `<li>${r.name} <span class="note">${(r.distance_km ?? 0).toFixed(1)} km</span>
+            <span class="bar" style="width:${Math.max(3, Math.round(60 * r.cq_s_per_m3 / top))}px"></span></li>`).join("")}</ol>
+          <div class="note">Ranked by how much air from each NPRI facility could reach this point for the
+          same release, from the model wind. It shows the air's path, not emissions, and is not a finding of fault.</div>`;
+        panel.classList.add("active");
+      }
+    }
+  } catch (err) {
+    console.warn("Footprint / ranking unavailable", err);
+  }
 }
 
 // ----------------------------

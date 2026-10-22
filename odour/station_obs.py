@@ -105,7 +105,7 @@ class StationCorrection:
     """Callable for HRDPSMet(correction=...): (t, lat, lon, levels) -> levels."""
 
     def __init__(self, base_met, obs: List[dict], length_km: float = 15.0, k0: float = 0.1,
-                 max_gap_h: float = 1.5):
+                 max_gap_h: float = 1.5, exposure: bool = True):
         self.length = length_km * 1000.0
         self.k0 = k0
         self.max_gap = max_gap_h * 3600.0
@@ -118,15 +118,29 @@ class StationCorrection:
         tt = [o["t"] for o in obs]
         du = np.zeros(len(obs))
         dv = np.zeros(len(obs))
+        so = np.zeros(len(obs))     # observed speed
+        sm = np.zeros(len(obs))     # model 10 m speed at the station
         for i, o in enumerate(obs):
             s = base_met.sample(o["t"], lat[i:i + 1], lon[i:i + 1])
             u10, v10 = s["levels"][10.0]
             du[i] = o["u"] - float(u10[0])
             dv[i] = o["v"] - float(v10[0])
+            so[i] = math.hypot(o["u"], o["v"])
+            sm[i] = math.hypot(float(u10[0]), float(v10[0]))
         self.lat, self.lon, self.du, self.dv = lat, lon, du, dv
         self.epoch = np.array([t.timestamp() for t in tt])
         self.names = [o["name"] for o in obs]
         self.stations = sorted(set(self.names))
+        # Exposure weight (2026-10-22): a sheltered station (median observed speed well below the model's at
+        # that spot over this run) mostly measures its own shelter - e.g. Hinton-Drinnan, mean 3.7 km/h - and
+        # pulling the field toward it made back-trajectories worse in the known-source test (Drinnan 74% -> 61%
+        # within 22.5 deg of the mill). ratio >= 0.7 full weight, <= 0.3 excluded, linear between; < 3 hours = 1.
+        self.exposure = {}
+        for n in self.stations:
+            m = np.array([x == n for x in self.names])
+            r = float(np.median(so[m]) / max(np.median(sm[m]), 0.5)) if m.sum() >= 3 else 1.0
+            self.exposure[n] = (float(np.clip((r - 0.3) / 0.4, 0.0, 1.0)) if exposure else 1.0, round(r, 2))
+        self.wexp = np.array([self.exposure[n][0] for n in self.names])
 
     def residual_summary(self):
         """Per-station mean residual (m/s) - diagnostics for model_info."""
@@ -135,7 +149,8 @@ class StationCorrection:
             m = np.array([x == n for x in self.names])
             out.append({"station": n, "lat": float(self.lat[m][0]), "lon": float(self.lon[m][0]),
                         "hours": int(m.sum()), "mean_du": float(self.du[m].mean()),
-                        "mean_dv": float(self.dv[m].mean())})
+                        "mean_dv": float(self.dv[m].mean()),
+                        "speed_ratio": self.exposure[n][1], "exposure_weight": round(self.exposure[n][0], 2)})
         return out
 
     def correction_at(self, t: dt.datetime, lat, lon):
@@ -158,7 +173,7 @@ class StationCorrection:
         cos0 = math.cos(math.radians(float(np.mean(slat))))
         dx = np.radians(lon[:, None] - slon[None, :]) * EARTH_R * cos0
         dy = np.radians(lat[:, None] - slat[None, :]) * EARTH_R
-        w = np.exp(-(dx ** 2 + dy ** 2) / self.length ** 2)
+        w = np.exp(-(dx ** 2 + dy ** 2) / self.length ** 2) * self.wexp[ii][None, :]
         den = w.sum(axis=1) + self.k0
         return (w @ self.du[ii]) / den, (w @ self.dv[ii]) / den
 

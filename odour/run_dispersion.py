@@ -214,8 +214,21 @@ def main():
         ranking = _rank_from_field(field, _npri_sources(lat, lon, radius_km or RANK_RADIUS_KM))
         # hour-mean C/Q -> perceived peaks (NSW 1 s, Ontario 10 min); see peak_to_mean.py (2026-10-21)
         pg_dom = ptm.dominant_class([h["pg"] for h in hm]) if hm else "D"
+        # very stable, near-calm hours: Project Sagebrush night tests (2026-10-22) showed the model reads ground
+        # concentrations ~2x LOW when u* < 0.05 m/s (beyond where surface-layer theory holds). Flag, don't tune.
+        vs_hours = [h for h in hm if h["L"] > 0 and h["ustar"] < 0.05]
+        if vs_hours:
+            notes["very_stable_caveat"] = {
+                "hours": len(vs_hours), "of": len(hm), "min_ustar": round(min(h["ustar"] for h in vs_hours), 3),
+                "note": "Very stable, near-calm air (u* < 0.05 m/s): in field tests (Project Sagebrush 2016 nights) "
+                        "the model read ground-level concentrations about 2x low in these conditions. Directions are "
+                        "unaffected; treat levels as a lower estimate."}
         notes["peak_to_mean"] = ptm.describe(pg_dom)
         ranking = ptm.annotate(ranking, pg_dom)
+        # NPRI releases -> estimated concentrations, kept in a SEPARATE file: source_ranking.json is committed
+        # to the public AB_winds repo by run_odour_poll.sh, source_estimates.json is not (named-facility
+        # concentration estimates are not published unless Kevin decides to). 2026-10-22
+        dump("source_estimates.json", ptm.estimate_concentrations(json.loads(json.dumps(ranking))))
         # opt-in uncertainty ensemble (ENSEMBLE=<members>, e.g. 12); see ensemble.py (2026-10-21)
         n_ens = int(os.environ.get("ENSEMBLE", "0") or 0)
         if n_ens > 1:

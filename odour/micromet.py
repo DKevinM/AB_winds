@@ -260,6 +260,27 @@ def sigma_w(z, ustar, L, zi, wstar=0.0):
     return _sigw(z, ustar, z / L, L < 0, np.clip(z / zi, 0.0, 1.0), wstar, z >= zi)
 
 
+def uw_profile(z, ustar, L, zi):
+    """Reynolds stress tau13 = u'w' (m2/s2), d(tau13)/dz and d(sigma_u^2)/dz at height z, consistent with
+    turbulence(): surface-layer value -u*^2, decaying to 0 at zi - linearly when unstable, as
+    (1 - 0.9 z/zi)^1.5 when stable/neutral (the square of the sigma decay used there). sigma_u is height-
+    independent in unstable air here, so its gradient is 0 there. Above zi: no stress, no gradient. (2026-10-22)"""
+    z = np.maximum(_arr(z), 0.05)
+    ustar = _arr(ustar)
+    L = _arr(L)
+    zi = np.maximum(_arr(zi), 50.0)
+    frac = np.clip(z / zi, 0.0, 1.0)
+    above = z >= zi
+    unstable = L < 0
+    u2 = ustar ** 2
+    g = np.maximum(1.0 - 0.9 * frac, 1e-6)
+    t13 = np.where(unstable, -u2 * (1.0 - frac), -u2 * g ** 1.5)
+    dt13 = np.where(unstable, u2 / zi, 1.35 * u2 * g ** 0.5 / zi)
+    dsu2 = np.where(unstable, 0.0, -(SIGU_NEUTRAL * ustar) ** 2 * 1.35 * g ** 0.5 / zi)
+    zero = np.zeros_like(t13)
+    return np.where(above, zero, t13), np.where(above, zero, dt13), np.where(above, zero, dsu2)
+
+
 def dsigw2_dz(z, ustar, L, zi, wstar=0.0, dz=0.5):
     """Vertical gradient of sigma_w^2 (centred difference) - needed for the
     Thomson (1987) well-mixed drift term. Done numerically so it stays

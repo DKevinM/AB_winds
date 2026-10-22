@@ -51,6 +51,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 import micromet as mm
+import terrain as _terrain
 
 EARTH_R = 6371000.0
 HRDPS_LEVELS = (10.0, 40.0, 80.0, 120.0)
@@ -224,6 +225,19 @@ class LSConfig:
     deposition_velocity: float = 0.0  # m/s (excl. settling), forward mode only
     record_every: int = 5        # cloud points every N advection steps
     seed: int = 12345
+    crossing_both: bool = False  # validation planes: count crossings in both directions (see run_ls)
+    # u'w' stress coupling (2026-10-22, opt-in): along-wind and vertical velocity fluctuations integrated
+    # together with covariance tau13 = -u*^2 (decaying to 0 at zi), Thomson (1987) Gaussian well-mixed
+    # solution for horizontally homogeneous turbulence - the WindTrax/Flesch-Wilson-Yee formulation.
+    # Off = the original independent u', w' model (validated results unchanged).
+    uw_stress: bool = False
+    # Terrain-climb limit (2026-10-22, opt-in): in stable air (L > 0) a parcel can rise only about U/N above
+    # its level (N from MOST, see terrain.brunt_vaisala_stable). Each sub-step looks 1 km ahead along the
+    # move; if the ground rises more than that, the uphill part of the move is removed (the particle slides
+    # along the contour). Backward runs block the mirror case (tracing back DOWNhill = air that climbed).
+    # dem: a terrain.DemGrid; None = the 0.01 deg Alberta DEM. Outside the DEM nothing is blocked.
+    terrain_block: bool = False
+    dem: Optional[object] = None
     # Domain radius (km from the release point). Particles beyond it are
     # dropped: the local-source question (odour, facility screening) is
     # answered inside ~25 km, and regional transport stays with HYSPLIT.
@@ -251,6 +265,16 @@ class LSResult:
     deposited: int = 0
     crossings: Optional[dict] = None   # validation: x-plane crossings
     exited: int = 0                    # particles dropped at radius_km
+
+
+_DEM_CACHE = None
+
+
+def _default_dem():
+    global _DEM_CACHE
+    if _DEM_CACHE is None:
+        _DEM_CACHE = _terrain.DemGrid()
+    return _DEM_CACHE
 
 
 def _advance_latlon(lat, lon, dx_e, dy_n):
@@ -361,17 +385,38 @@ def run_ls(met, start_lat, start_lon, start_time_utc, hours=5.0,
                 step = np.minimum(remaining[act],
                                   np.maximum(np.minimum(cfg.mu * tb["TLw"], grad_lim), cfg.dt_min))
 
-                # --- velocities: exact OU damping + Thomson drift (vertical)
-                for arr, TL, sig in ((a_, tb["TLu"], tb["sigu"]), (c_, tb["TLv"], tb["sigv"])):
-                    r = np.exp(-step / TL)
-                    arr[act] = arr[act] * r + sig * np.sqrt(1.0 - r * r) * rng.standard_normal(step.size)
-                wa = w_[act]
+                # --- velocities
                 sw = tb["sigw"]
-                wa = np.clip(wa, -6.0 * sw, 6.0 * sw)
-                r = np.exp(-step / tb["TLw"])
-                drift = 0.5 * ds2 * (1.0 + wa * wa / sw ** 2) * step
-                wa = wa * r + drift + sw * np.sqrt(1.0 - r * r) * rng.standard_normal(step.size)
-                wa = np.clip(wa, -6.0 * sw, 6.0 * sw)
+                if cfg.uw_stress:
+                    # coupled (u', w') with tau13 = u'w' < 0; cross-wind v' stays an independent OU process
+                    r = np.exp(-step / tb["TLv"])
+                    c_[act] = c_[act] * r + tb["sigv"] * np.sqrt(1.0 - r * r) * rng.standard_normal(step.size)
+                    pa, wa = a_[act], w_[act]
+                    t13, dt13, dsu2 = mm.uw_profile(z_a, sa["ustar"], sa["L"], sa["zi"])
+                    su2, sw2 = tb["sigu"] ** 2, sw ** 2
+                    t13 = np.clip(t13, -0.9 * np.sqrt(su2 * sw2), 0.0)
+                    D = su2 * sw2 - t13 * t13
+                    gu = (sw2 * pa - t13 * wa) / D          # lambda . u'  (lambda = inverse covariance)
+                    gw = (-t13 * pa + su2 * wa) / D
+                    ce = cfg.C0 * tb["eps"]
+                    au = -0.5 * ce * gu + 0.5 * dt13 + 0.5 * wa * (gu * dsu2 + gw * dt13)
+                    aw = -0.5 * ce * gw + 0.5 * ds2 + 0.5 * wa * (gu * dt13 + gw * ds2)
+                    sq = np.sqrt(ce * step)
+                    pa = pa + au * step + sq * rng.standard_normal(step.size)
+                    wa = wa + aw * step + sq * rng.standard_normal(step.size)
+                    a_[act] = np.clip(pa, -6.0 * tb["sigu"], 6.0 * tb["sigu"])
+                    wa = np.clip(wa, -6.0 * sw, 6.0 * sw)
+                else:
+                    # exact OU damping + Thomson drift (vertical)
+                    for arr, TL, sig in ((a_, tb["TLu"], tb["sigu"]), (c_, tb["TLv"], tb["sigv"])):
+                        r = np.exp(-step / TL)
+                        arr[act] = arr[act] * r + sig * np.sqrt(1.0 - r * r) * rng.standard_normal(step.size)
+                    wa = w_[act]
+                    wa = np.clip(wa, -6.0 * sw, 6.0 * sw)
+                    r = np.exp(-step / tb["TLw"])
+                    drift = 0.5 * ds2 * (1.0 + wa * wa / sw ** 2) * step
+                    wa = wa * r + drift + sw * np.sqrt(1.0 - r * r) * rng.standard_normal(step.size)
+                    wa = np.clip(wa, -6.0 * sw, 6.0 * sw)
 
                 # --- mean wind at particle height, rotate fluctuations to E/N
                 Ue, Vn = met.mean_wind(sa, z_a)
@@ -380,10 +425,52 @@ def run_ls(met, start_lat, start_lon, start_time_utc, hours=5.0,
                 ey = np.where(spd > 1e-6, Vn / np.maximum(spd, 1e-6), 0.0)
                 ue = Ue + a_[act] * ex - c_[act] * ey + mxa[act]
                 vn = Vn + a_[act] * ey + c_[act] * ex + mya[act]
-
-                dxe = sgn * ue * step
-                dyn = sgn * vn * step
+                if cfg.uw_stress and sgn < 0:
+                    te = a_[act] * ex - c_[act] * ey + mxa[act]   # turbulent + meander, east/north
+                    tn = a_[act] * ey + c_[act] * ex + mya[act]
+                    # backward time with u'w' coupling: the reversed pair (-u', -w) must keep covariance
+                    # tau13, so the turbulent part keeps its sign and only the mean wind is reversed
+                    # (w is used unreversed below, as for the uncoupled model).
+                    dxe = (-Ue + te) * step
+                    dyn = (-Vn + tn) * step
+                    ue = Ue - te                                   # forward-equivalent speed for the validation planes
+                else:
+                    dxe = sgn * ue * step
+                    dyn = sgn * vn * step
                 la_new, lo_new = _advance_latlon(la[act], lo[act], dxe, dyn)
+
+                # --- terrain-climb limit in stable air (opt-in)
+                if cfg.terrain_block:
+                    stab = sa["L"] > 0
+                    if np.any(stab):
+                        dem = cfg.dem or _default_dem()
+                        la_a, lo_a = la[act], lo[act]
+                        dist = np.hypot(dxe, dyn)
+                        ux = dxe / np.maximum(dist, 1e-9)
+                        uy = dyn / np.maximum(dist, 1e-9)
+                        h0 = dem.elevation(la_a, lo_a)
+                        lah, loh = _advance_latlon(la_a, lo_a, ux * 1000.0, uy * 1000.0)
+                        rise = sgn * (dem.elevation(lah, loh) - h0)      # forward-time climb along the move
+                        zeta = np.minimum(z_a / np.maximum(sa["L"], 1e-3), 5.0)
+                        Nbv = _terrain.brunt_vaisala_stable(sa["ustar"], sa["L"], z_a, mm.phi_m(zeta))
+                        budget = np.hypot(Ue, Vn) / Nbv
+                        blocked = stab & (dist > 0) & np.isfinite(rise) & (rise > budget)
+                        if np.any(blocked):
+                            e1la, e1lo = _advance_latlon(la_a, lo_a, 500.0, 0.0)
+                            w1la, w1lo = _advance_latlon(la_a, lo_a, -500.0, 0.0)
+                            n1la, n1lo = _advance_latlon(la_a, lo_a, 0.0, 500.0)
+                            s1la, s1lo = _advance_latlon(la_a, lo_a, 0.0, -500.0)
+                            gx = (dem.elevation(e1la, e1lo) - dem.elevation(w1la, w1lo)) / 1000.0
+                            gy = (dem.elevation(n1la, n1lo) - dem.elevation(s1la, s1lo)) / 1000.0
+                            gn = np.hypot(gx, gy)
+                            ok_g = blocked & np.isfinite(gn) & (gn > 1e-6)
+                            gxh = np.where(ok_g, gx / np.maximum(gn, 1e-6), 0.0)
+                            gyh = np.where(ok_g, gy / np.maximum(gn, 1e-6), 0.0)
+                            proj = dxe * gxh + dyn * gyh                   # displacement along the gradient
+                            cut = ok_g & (sgn * proj > 0)                   # the forward-time uphill part
+                            dxe = np.where(cut, dxe - proj * gxh, dxe)
+                            dyn = np.where(cut, dyn - proj * gyh, dyn)
+                            la_new, lo_new = _advance_latlon(la_a, lo_a, dxe, dyn)
 
                 # --- vertical move, settling (forward only)
                 vs = cfg.settling_velocity if sgn > 0 else 0.0
@@ -394,15 +481,21 @@ def run_ls(met, start_lat, start_lon, start_time_utc, hours=5.0,
                     xd_old = xd[act]
                     xd_new = xd_old + dxe
                     for xp in cross:
-                        if sgn > 0:
-                            hit = (xd_old < xp) & (xd_new >= xp)
-                        else:   # backward validation (2026-10-21): plane xp metres UPWIND of the receptor
-                            hit = (xd_old > -xp) & (xd_new <= -xp)
+                        pl = xp if sgn > 0 else -xp     # backward validation (2026-10-21): plane xp m UPWIND of the receptor
+                        if cfg.crossing_both:
+                            # every crossing, either direction, weight 1/|u| (the proper residence-time estimator;
+                            # matters in light wind where meander/turbulence turn particles back across the plane)
+                            hit = ((xd_old < pl) & (xd_new >= pl)) | ((xd_old >= pl) & (xd_new < pl))
+                        elif sgn > 0:
+                            hit = (xd_old < pl) & (xd_new >= pl)
+                        else:
+                            hit = (xd_old > pl) & (xd_new <= pl)
                         if np.any(hit):
                             zf = z_a[hit]
                             ok = np.abs(zf - crossing_z) <= crossing_dz / 2.0
                             # Cy/Q contribution = 1 / (N * u_x * dz)
-                            cross[xp] += float(np.sum(1.0 / np.maximum(ue[hit][ok], 0.05)) / crossing_dz)
+                            ux = np.abs(ue[hit][ok]) if cfg.crossing_both else ue[hit][ok]
+                            cross[xp] += float(np.sum(1.0 / np.maximum(ux, 0.05)) / crossing_dz)
                     xd[act] = xd_new
 
                 # --- ground reflection / deposition / touchdowns
