@@ -40,7 +40,11 @@ SIGW_NEUTRAL = 1.25
 L_NEUTRAL = 1.0e5    # |L| above this is treated as neutral
 L_MIN_STABLE = 2.0   # floor on stable L (very stable collapse guard)
 L_MIN_UNSTABLE = -2.0
-SIGMA_FLOOR = 0.05   # m/s, residual turbulence floor (night/residual layer)
+SIGMA_FLOOR = 0.01   # m/s, residual turbulence floor (night/residual layer). Was 0.05 until 2026-10-22: that
+#                      floored sigma_w above the real value (1.25 u*) whenever u* < 0.04 m/s while eps still
+#                      followed u*, so K ~ sigma_w^4 was up to ~16x too high and night ground-level values
+#                      read 2-8x low (Project Sagebrush 2016 nights; sonics measured sigma_w ~0.03 m/s). 0.01
+#                      left Prairie Grass, the backward check and Flesch 2004 unchanged.
 EPS_FLOOR = 1.0e-6   # m2/s3
 
 

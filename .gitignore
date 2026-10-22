@@ -5,3 +5,9 @@ click_runs/
 met_data/
 met_data_sk/
 dsai/data/
+# private: named-facility concentration estimates from NPRI releases (2026-10-22) - never publish
+odour_data/source_estimates.json
+# transcribed from Flesch et al. (2004), J. Appl. Meteor. - copyrighted paper; keep local
+odour/validation/flesch2004/
+# validation run logs
+odour/validation/*/run.log

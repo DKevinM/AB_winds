@@ -105,7 +105,7 @@ class StationCorrection:
     """Callable for HRDPSMet(correction=...): (t, lat, lon, levels) -> levels."""
 
     def __init__(self, base_met, obs: List[dict], length_km: float = 15.0, k0: float = 0.1,
-                 max_gap_h: float = 1.5, exposure: bool = True):
+                 max_gap_h: float = 1.5, exposure: bool = False):
         self.length = length_km * 1000.0
         self.k0 = k0
         self.max_gap = max_gap_h * 3600.0
@@ -135,6 +135,8 @@ class StationCorrection:
         # that spot over this run) mostly measures its own shelter - e.g. Hinton-Drinnan, mean 3.7 km/h - and
         # pulling the field toward it made back-trajectories worse in the known-source test (Drinnan 74% -> 61%
         # within 22.5 deg of the mill). ratio >= 0.7 full weight, <= 0.3 excluded, linear between; < 3 hours = 1.
+        # OFF by default: in the known-source test it did not help Drinnan (61% either way) and made ECCO worse
+        # (23% -> 15% within 22.5 deg), 2026-10-22. Kept for experiments: StationCorrection(..., exposure=True).
         self.exposure = {}
         for n in self.stations:
             m = np.array([x == n for x in self.names])
