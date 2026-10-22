@@ -109,9 +109,16 @@ def _releases():
 
 def estimate_concentrations(rows):
     """For ranking rows with npri_id and cq_s_per_m3 (hour-mean C/Q), add "est": per substance the annual-
-    average release (g/s) times C/Q = estimated hour-mean concentration at the receptor (ug/m3; ppb for
-    gases at 25 C, 1 atm), its NSW 1 s peak and Ontario 10 min value, and the AAAQO 1 h objective where one
-    exists. Annual-average emissions: real hourly releases vary, so this is a screening estimate."""
+    average NON-STACK release (g/s) times C/Q = estimated hour-mean concentration at the receptor (ug/m3; ppb
+    for gases at 25 C, 1 atm), its NSW 1 s peak and Ontario 10 min value, and the AAAQO 1 h objective where
+    one exists. Annual-average emissions: real hourly releases vary, so this is a screening estimate.
+
+    Stack releases are LEFT OUT (2026-10-22): C/Q is for a 10 m release, and a hot, tall stack plume with
+    plume rise reaches the ground far less near the source. Check at Hinton-Drinnan, 21 Oct 2026 20-23 h:
+    with stacks included, Mondi (NPRI: SO2/NOx/H2S ~100% stack) came out at SO2 29 ppb and TRS 3.3 ppb vs
+    measured 0.0-0.1 and 0.1-0.3 ppb; the non-stack part alone gives TRS ~0.15 ppb. Each substance reports
+    stack_share so a page can say "mostly stack - not estimated". Elevated (stack) contributions would need
+    stack heights and a plume-rise model (not built)."""
     rel = _releases()
     for r in rows:
         f = rel.get(str(r.get("npri_id")))
@@ -119,8 +126,12 @@ def estimate_concentrations(rows):
             continue
         est = {}
         for sub, x in f["substances"].items():
-            c = r["cq_s_per_m3"] * x["g_per_s"] * 1e6           # ug/m3, hour mean
-            e = {"g_per_s": x["g_per_s"], "ug_m3": round(c, 4),
+            sh = x.get("stack_share")
+            sh = 0.0 if sh is None else float(sh)
+            g_ground = x["g_per_s"] * (1.0 - sh)                # non-stack (fugitive, storage, other) part
+            c = r["cq_s_per_m3"] * g_ground * 1e6                 # ug/m3, hour mean
+            e = {"g_per_s": x["g_per_s"], "g_per_s_ground": round(g_ground, 6), "stack_share": round(sh, 3),
+                 "ug_m3": round(c, 4),
                  "ug_m3_peak_1s": round(c * r.get("pm_factor_nsw_1s", 1.0), 4),
                  "ug_m3_10min": round(c * r.get("pm_factor_ontario_10min", 1.0), 4)}
             if sub in MW:
