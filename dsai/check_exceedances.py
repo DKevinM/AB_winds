@@ -40,6 +40,46 @@ TRIGGERED_LOG_PATH = "/opt/airquality/dsai_data/triggered_events.json"
 PM25_PARAMETER = "Fine Particulate Matter"
 REGIONAL_PM25_THRESHOLD = 5  # more than this many stations tripping PM2.5 at once = regional smoke, not N point sources
 TRS_PARAMETER = "Total Reduced Sulphur"
+# Automatic HYSPLIT on every trigger PAUSED 2026-10-23 (Kevin's call): most
+# same-hour runs failed on not-yet-published GFS met, the retry backlog grew
+# into the thousands, and no page displays these trajectories. Detection,
+# fire context and receptors still run and log; trajectories are now run on
+# request (rerun_deep_dive.py / run_hysplit.py). Set DSAI_AUTO_HYSPLIT=1 to restore.
+AUTO_HYSPLIT = os.getenv("DSAI_AUTO_HYSPLIT", "0") == "1"
+
+# H2S/TRS/SO2 trigger rules (2026-10-23, Kevin's call). The percentile test
+# alone fired ~2,300 times in 30 days at a median of 1-2 ppb - these analysers
+# report whole ppb and sit near 0, so a single 1 ppb reading ranks as
+# "unusual" (Smoky Heights TRS: 499 triggers, every one at 1.0). Now:
+#   - ignore anything under the parameter's floor, whatever its percentile
+#   - always trigger at the lowest 1-h alert level, percentile or not
+#   - tag 24-h means at/over the 24-h objective
+#   - back-to-back hours are one episode: full checks on the first hour,
+#     one CONTINUING line after that
+# TRS has no Alberta objective of its own; the H2S levels are used as
+# reference. All values ppb.
+H2S_PARAMETER = "Hydrogen Sulphide"
+SO2_PARAMETER = "Sulphur Dioxide"
+SULPHUR_RULES = {
+    H2S_PARAMETER: {
+        "floor": 3.0,
+        "alerts_1h": [(10.0, "Alberta 1-h objective")],
+        "alert_24h": (3.0, "Alberta 24-h objective"),
+    },
+    TRS_PARAMETER: {
+        "floor": 3.0,
+        "alerts_1h": [(10.0, "Alberta H2S 1-h objective, as reference")],
+        "alert_24h": None,
+    },
+    SO2_PARAMETER: {
+        "floor": 10.0,  # 5 ppb gave ~100 episodes/30 d, mostly Heartland background; 10 gave 29
+        "alerts_1h": [(65.0, "2025 CAAQS 1-h level, as reference"), (172.0, "Alberta 1-h objective")],
+        "alert_24h": (48.0, "Alberta 24-h objective"),
+    },
+}
+SULPHUR_PARAMETERS = tuple(SULPHUR_RULES)
+EPISODE_GAP_HOURS = 2         # up to one quiet/missing hour keeps the same episode
+EPISODES_PATH = "/opt/airquality/dsai_data/sulphur_episodes.json"
 
 
 def _enqueue_retry(station, parameter, event_dt, duration_hours, cur_ts, result=None):
@@ -80,6 +120,72 @@ def fetch_latest_two(sb, station, parameter):
     return rows
 
 
+def fetch_24h_mean(sb, station, parameter, cur_ts):
+    start = (dt.datetime.fromisoformat(cur_ts) - dt.timedelta(hours=23)).isoformat()
+    res = (
+        sb.table("aqhi_data")
+        .select("Value")
+        .eq("StationName", station)
+        .eq("ParameterName", parameter)
+        .gte("ReadingDate", start)
+        .lte("ReadingDate", cur_ts)
+        .execute()
+    )
+    vals = [r["Value"] for r in res.data if r["Value"] is not None]
+    if len(vals) < 18:  # need 75% of the day for a meaningful 24-h mean
+        return None
+    return sum(vals) / len(vals)
+
+
+def sulphur_alert_notes(sb, station, parameter, cur_ts, cur_val):
+    rules = SULPHUR_RULES[parameter]
+    notes = []
+    for level, label in rules["alerts_1h"]:
+        if cur_val >= level:
+            notes.append(f"ALERT: {cur_val:g} ppb >= {level:g} ppb {label}")
+    if rules["alert_24h"]:
+        level, label = rules["alert_24h"]
+        mean24 = fetch_24h_mean(sb, station, parameter, cur_ts)
+        if mean24 is not None and mean24 >= level:
+            notes.append(f"ALERT: 24-h mean {mean24:.1f} ppb >= {level:g} ppb {label}")
+    return notes
+
+
+def sulphur_triggers(parameter, cur_val, result):
+    rules = SULPHUR_RULES[parameter]
+    if cur_val >= min(level for level, _ in rules["alerts_1h"]):
+        return True
+    return cur_val >= rules["floor"] and result["any_flag"]
+
+
+def load_episodes():
+    if not os.path.exists(EPISODES_PATH):
+        return {}
+    with open(EPISODES_PATH) as f:
+        return json.load(f)
+
+
+def save_episodes(episodes):
+    with open(EPISODES_PATH, "w") as f:
+        json.dump(episodes, f, indent=1, sort_keys=True)
+
+
+def update_episode(episodes, station, parameter, cur_ts, cur_val):
+    """Returns (episode, is_new). Extends the station's open episode if its
+    last hour is within EPISODE_GAP_HOURS, otherwise starts a new one."""
+    key = f"{station}::{parameter}"
+    now = dt.datetime.fromisoformat(cur_ts)
+    ep = episodes.get(key)
+    if ep and dt.timedelta(0) < now - dt.datetime.fromisoformat(ep["last"]) <= dt.timedelta(hours=EPISODE_GAP_HOURS):
+        ep["last"] = cur_ts
+        ep["hours"] += 1
+        ep["peak"] = max(ep["peak"], cur_val)
+        return ep, False
+    ep = {"start": cur_ts, "last": cur_ts, "hours": 1, "peak": cur_val, "alerted": False}
+    episodes[key] = ep
+    return ep, True
+
+
 def fetch_latest_wind_direction(sb, station):
     res = (
         sb.table("aqhi_data")
@@ -111,13 +217,39 @@ def print_fire_context(fire):
         print(f"  FIRE CONTEXT: check failed - {fire.get('error')}")
 
 
-def handle_individual_trigger(sb, station, parameter, cur_ts, result, receptors):
+def handle_individual_trigger(sb, station, parameter, cur_ts, result, receptors, notes=()):
     """Full pipeline for a single station/parameter exceedance: HYSPLIT,
-    FIRMS fire context, downwind receptors. Used for every H2S/SO2/TRS
-    trigger, and for PM2.5 triggers when NOT part of a regional event."""
+    FIRMS fire context, downwind receptors. Used for the first hour of an
+    H2S/TRS/SO2 episode, and for PM2.5 triggers when NOT part of a
+    regional event."""
     print(f"EXCEEDANCE: {station} / {parameter} @ {cur_ts}")
     print(f"  {result}")
+    for note in notes:
+        print(f"  {note}")
     event_dt = dt.datetime.strptime(cur_ts[:16], "%Y-%m-%dT%H:%M")
+    if not AUTO_HYSPLIT:
+        print("  HYSPLIT: automatic runs paused - run on request")
+    else:
+        _run_trajectory(station, parameter, event_dt, cur_ts, result)
+
+    lat, lon = STATIONS[station]
+    fire = check_hotspots(lat, lon)
+    print_fire_context(fire)
+
+    if receptors:
+        wind_from = fetch_latest_wind_direction(sb, station)
+        if wind_from is not None:
+            downwind = receptors_downwind(lat, lon, wind_from, receptors, max_distance_km=30)
+            if downwind:
+                names = ", ".join(f"{r['name']} ({r['type']}, {r['distance_km']}km)" for r in downwind[:5])
+                print(f"  DOWNWIND RECEPTORS: {len(downwind)} within 30km - {names}")
+            else:
+                print("  DOWNWIND RECEPTORS: none within 30km")
+        else:
+            print("  DOWNWIND RECEPTORS: skipped (no wind direction reading)")
+
+
+def _run_trajectory(station, parameter, event_dt, cur_ts, result):
     try:
         results, work_dir = run_ensemble(station, event_dt)
         if any(v is not None for v in results.values()):
@@ -141,22 +273,6 @@ def handle_individual_trigger(sb, station, parameter, cur_ts, result, receptors)
     except Exception as ex:
         print(f"  HYSPLIT run failed: {ex}")
         _enqueue_retry(station, parameter, event_dt, DEFAULT_DURATION_HOURS, cur_ts, result=result)
-
-    lat, lon = STATIONS[station]
-    fire = check_hotspots(lat, lon)
-    print_fire_context(fire)
-
-    if receptors:
-        wind_from = fetch_latest_wind_direction(sb, station)
-        if wind_from is not None:
-            downwind = receptors_downwind(lat, lon, wind_from, receptors, max_distance_km=30)
-            if downwind:
-                names = ", ".join(f"{r['name']} ({r['type']}, {r['distance_km']}km)" for r in downwind[:5])
-                print(f"  DOWNWIND RECEPTORS: {len(downwind)} within 30km - {names}")
-            else:
-                print("  DOWNWIND RECEPTORS: none within 30km")
-        else:
-            print("  DOWNWIND RECEPTORS: skipped (no wind direction reading)")
 
 
 def handle_regional_pm25_event(pm25_hits):
@@ -183,6 +299,8 @@ def main():
     cache = load_cache()
     triggered = load_triggered_log()
     receptors = load_receptors()
+    episodes = load_episodes()
+    episodes_changed = False
 
     if not cache:
         print("No climatology cache found - run build_climatology_cache.py first.")
@@ -209,6 +327,25 @@ def main():
 
             delta = cur_val - prev_val
             result = check_exceedance(clim, cur_val, delta)
+
+            if parameter in SULPHUR_PARAMETERS:
+                if not sulphur_triggers(parameter, cur_val, result):
+                    continue
+                notes = sulphur_alert_notes(sb, station, parameter, cur_ts, cur_val)
+                ep, is_new = update_episode(episodes, station, parameter, cur_ts, cur_val)
+                episodes_changed = True
+                if is_new:
+                    handle_individual_trigger(sb, station, parameter, cur_ts, result, receptors, notes)
+                else:
+                    print(f"CONTINUING: {station} / {parameter} @ {cur_ts} - {cur_val:g} ppb, "
+                          f"hour {ep['hours']} of episode since {ep['start']} (peak {ep['peak']:g} ppb)")
+                    if notes and not ep["alerted"]:
+                        for note in notes:
+                            print(f"  {note}")
+                ep["alerted"] = ep["alerted"] or bool(notes)
+                triggered.add(event_id)
+                new_triggers += 1
+                continue
 
             if not result["any_flag"]:
                 continue
@@ -239,6 +376,8 @@ def main():
 
     if new_triggers:
         save_triggered_log(triggered)
+    if episodes_changed:
+        save_episodes(episodes)
     print(f"Check complete. {new_triggers} new trigger(s).")
 
 
