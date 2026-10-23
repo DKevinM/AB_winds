@@ -177,6 +177,8 @@ def click_status(job_id:str):
 # trimmed to the cells holding 99% of the weight, the LS touchdown footprint
 # and NPRI source ranking (backward), and the met summary.
 import re as _re
+sys.path.insert(0, str(ROOT / 'py'))
+import wind_archive  # noqa: E402
 
 LS_RUNS_DIR = ROOT / 'ls_runs'
 LS_MAX_HOURS = 12
@@ -196,6 +198,10 @@ def _met_coverage():
         if m:
             run = datetime.strptime(m.group(1) + m.group(2), '%Y%m%d%H').replace(tzinfo=timezone.utc)
             times.append(run + timedelta(hours=int(m.group(3))))
+    # Older months are archived in Dropbox and restored on demand by met_store.
+    archived = wind_archive.archived_first_valid()
+    if archived:
+        times.append(archived)
     return (min(times), max(times)) if times else (None, None)
 
 

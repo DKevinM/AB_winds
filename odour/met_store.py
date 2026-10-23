@@ -24,9 +24,14 @@ import os
 import re
 from typing import Optional
 
+import sys
+
 import numpy as np
 
 import backtraj_core as bc
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "py"))
+import wind_archive  # noqa: E402  (older months live in Dropbox; restored on demand)
 
 MET_DIR_DEFAULT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "met_data")
 CACHE_DIR = "/opt/airquality/dsai_data/met_npz_cache"
@@ -60,6 +65,12 @@ class LocalMetStore(bc.MetStoreV2):
         self.snaps = []
         t0 = min(t_from, t_to) - dt.timedelta(hours=pad_hours)
         t1 = max(t_from, t_to) + dt.timedelta(hours=pad_hours)
+        if os.path.abspath(met_dir) == os.path.abspath(wind_archive.MET_DIR):
+            utc = lambda t: t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)
+            try:
+                wind_archive.ensure_window(utc(t0), utc(t1), met_dir, pad_hours=0)
+            except Exception as ex:  # Dropbox down etc. - carry on with whatever is local
+                print(f"wind_archive restore failed: {ex}", file=sys.stderr)
         idx = _index(met_dir)
         wanted = sorted(v for v in idx if t0 <= v <= t1)
         for v in wanted:
