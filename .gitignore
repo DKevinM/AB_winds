@@ -11,3 +11,4 @@ odour_data/source_estimates.json
 odour/validation/flesch2004/
 # validation run logs
 odour/validation/*/run.log
+met_data_hpfx/
