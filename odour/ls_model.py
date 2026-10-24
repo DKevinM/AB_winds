@@ -107,14 +107,17 @@ class HRDPSMet:
     Alberta. Below 10 m the MOST log profile is used; above 120 m the
     120 m wind is held."""
 
-    def __init__(self, metstore, z0=0.1, z0_fn=None, correction=None):
+    def __init__(self, metstore, z0=0.1, z0_fn=None, correction=None, drainage=None):
         """z0: default roughness (m). z0_fn(lat, lon) -> z0 array overrides it
         per position (landcover.RoughnessMap). correction(t, lat, lon, levels)
-        -> levels adjusts the wind levels (station_obs.StationCorrection)."""
+        -> levels adjusts the wind levels (station_obs.StationCorrection).
+        drainage(lat, lon, levels, T2, T40) -> levels adds valley cold-air drainage
+        (drainage.Drainage); applied to raw HRDPS before the station correction."""
         self.met = metstore
         self.z0 = float(z0)
         self.z0_fn = z0_fn
         self.correction = correction
+        self.drainage = drainage
         self.grid = metstore.grid
 
     def _bilinear(self, field, lat, lon):
@@ -155,10 +158,12 @@ class HRDPSMet:
             if u is None or v is None:
                 raise KeyError(f"HRDPS snapshot missing u/v at {int(h)} m")
             lev[h] = (u, v)
-        if self.correction is not None:
-            lev = self.correction(t, lat, lon, lev)
         T2 = self._field(s0, s1, a, "tmp2", lat, lon)
         T40 = self._field(s0, s1, a, "tmp40", lat, lon)
+        if self.drainage is not None:
+            lev = self.drainage(lat, lon, lev, T2, T40)
+        if self.correction is not None:
+            lev = self.correction(t, lat, lon, lev)
         zi = self._field(s0, s1, a, "hpbl", lat, lon)
         if zi is None:
             zi = np.full(lat.shape, 800.0)

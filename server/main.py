@@ -258,7 +258,7 @@ def _run_ls_job(job_id, lat, lon, time_local, hours, direction):
             'info': {k: info.get(k) for k in ('direction', 'start_utc', 'hours', 'radius_km', 'exited_at_radius',
                                               'n_particles_per_height', 'start_heights_m',
                                               'touchdowns', 'met_at_site', 'station_winds', 'landcover', 'met_source',
-                                              'very_stable_caveat', 'peak_to_mean', 'observed_trace')},
+                                              'very_stable_caveat', 'peak_to_mean', 'observed_trace', 'drainage')},
         }
         with LS_JOBS_LOCK: LS_JOBS[job_id].update(status='completed', result=result, completed_at=datetime.now(timezone.utc).isoformat())
     except subprocess.TimeoutExpired:

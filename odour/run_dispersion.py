@@ -49,6 +49,7 @@ import station_obs as so          # noqa: E402
 import landcover as lc            # noqa: E402
 import met_store as ms            # noqa: E402
 import observed_trace as ot       # noqa: E402
+import drainage as dr              # noqa: E402
 
 NPRI_PATH = "/opt/airquality/dsai_data/npri_alberta.geojson"
 RANK_RADIUS_KM = 50.0
@@ -130,6 +131,16 @@ def main():
                              start + dt.timedelta(hours=sgn * hours))
     met = ls.HRDPSMet(store, z0=z0)
     notes = {}
+    # valley cold-air drainage where a LiDAR-based field covers the point (Hinton so far; drainage.py)
+    if os.environ.get("DRAINAGE", "1") != "0":
+        try:
+            dfield = dr.for_point(lat, lon)
+            if dfield is not None:
+                met.drainage = dfield
+                notes["drainage"] = {"area": dfield.name, "S0_K": dfield.S0, "VC_kmh": round(dfield.VC * 3.6, 1),
+                                     "VD_kmh": round(dfield.VD * 3.6, 1)}
+        except Exception as exc:
+            notes["drainage"] = {"error": str(exc)}
 
     if use_landcover:
         try:
