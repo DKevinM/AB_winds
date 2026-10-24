@@ -251,13 +251,14 @@ def _run_ls_job(job_id, lat, lon, time_local, hours, direction):
             'ls_footprint': _round_fc(rd('ls_footprint.geojson')) if direction == 'backward' else None,
             'ls_density': _round_fc(rd('backtraj_density.geojson')),   # where the LS particles were (both directions)
             'source_ranking': (rank or [])[:10] if isinstance(rank, list) else None,
+            'observed_trace': rd('observed_trace.geojson'),   # path from the nearest station's own wind (2026-10-24)
             # NPRI release-based concentration estimates (2026-10-22). /ls-run is only reachable through the
             # password-protected pages (nginx: /wcas-emergency/api, /hinton/api; uvicorn binds 127.0.0.1).
             'source_estimates': (rd('source_estimates.json') or [])[:10],
             'info': {k: info.get(k) for k in ('direction', 'start_utc', 'hours', 'radius_km', 'exited_at_radius',
                                               'n_particles_per_height', 'start_heights_m',
                                               'touchdowns', 'met_at_site', 'station_winds', 'landcover', 'met_source',
-                                              'very_stable_caveat', 'peak_to_mean')},
+                                              'very_stable_caveat', 'peak_to_mean', 'observed_trace')},
         }
         with LS_JOBS_LOCK: LS_JOBS[job_id].update(status='completed', result=result, completed_at=datetime.now(timezone.utc).isoformat())
     except subprocess.TimeoutExpired:

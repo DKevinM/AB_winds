@@ -48,6 +48,7 @@ import micromet as mm             # noqa: E402
 import station_obs as so          # noqa: E402
 import landcover as lc            # noqa: E402
 import met_store as ms            # noqa: E402
+import observed_trace as ot       # noqa: E402
 
 NPRI_PATH = "/opt/airquality/dsai_data/npri_alberta.geojson"
 RANK_RADIUS_KM = 50.0
@@ -140,6 +141,7 @@ def main():
         except Exception as exc:          # network/raster failure -> flat z0, run continues
             notes["landcover"] = {"error": str(exc), "fallback_z0_m": z0}
 
+    obs = []
     if use_stations:
         try:
             sgn0 = 1.0 if direction == "forward" else -1.0
@@ -247,6 +249,18 @@ def main():
                                  "probability": "share of members with the source bearing inside the central 80% "
                                                 "of the footprint's directions at the source's distance"}
         dump("source_ranking.json", ranking)
+        # observed-wind back-trace from the nearest station's own wind (2026-10-24, see observed_trace.py)
+        try:
+            if not obs:
+                obs = so.fetch_station_winds(lat, lon, start - dt.timedelta(hours=hours), start, radius_km=ot.NEAR_KM + 1.0)
+            tr = ot.back_trace(obs, lat, lon, start, hours, _npri_sources(lat, lon, radius_km or RANK_RADIUS_KM))
+            if tr:
+                dump("observed_trace.geojson", tr["geojson"])
+                notes["observed_trace"] = tr["summary"]
+            else:
+                notes["observed_trace"] = {"note": f"no station within {ot.NEAR_KM:g} km with wind data"}
+        except Exception as exc:
+            notes["observed_trace"] = {"error": str(exc)}
     dump("gauss_footprint.geojson", gp.grid_to_geojson(field))
     puff_secs = time.time() - t1
 
