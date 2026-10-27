@@ -27,6 +27,10 @@
 #
 # Runs hourly (run_sk_wind_slim.sh, cron) and after each ab_met_pull.py. Safe to re-run:
 # files already converted are skipped.
+#
+# Regions (2026-10-27): `sk_wind_slim.py` = SK as above. `sk_wind_slim.py sturgeon` = the
+# Sturgeon Lake Cree Nation dashboard (Valleyview area, wide enough to take in Wonder
+# Valley and Grande Prairie): same pipeline, its own crop, local folder and storage prefix.
 
 import datetime as dt
 import glob
@@ -46,19 +50,35 @@ from wind_obs_nudge import buddy_check, correction_at, fetch_swob, sample_grid
 
 ROOT = Path(__file__).resolve().parent.parent
 MET_DIR = ROOT / "met_data"
-OUT_DIR = ROOT / "met_data_sk"
 BUCKET = "winds"
-PREFIX = "sk_slim"
 
 # SK_Air_Map bounds are [[48.9,-110.1],[60.1,-101.3]]; the wide margin is what a
 # desktop screen shows at the default zoom 6 (Kamloops to Winnipeg), so the
 # particles don't stop in a hard box just past the border.
-LAT_MIN, LAT_MAX = 47.5, 61.5
-LON_MIN, LON_MAX = -118.0, -94.0
-BLOCK = 3
-# Bump when the crop/block/format changes: it names the published folder (sk_slim/gen<N>/)
-# and published files are cached for a day (v1 = first, narrower crop on 2026-10-18).
-SLIM_VERSION = 2
+# Sturgeon Lake: reserve at 55.05N 117.50W, Wonder Valley data centre at 54.81N 118.68W;
+# the box covers Grande Prairie to Whitecourt at the dashboard's zoomed-out views.
+# Bump slim_version when a region's crop/block/format changes: it names the published
+# folder (<prefix>/gen<N>/) and published files are cached for a day
+# (SK v1 = first, narrower crop on 2026-10-18).
+REGIONS = {
+    "sk": {"out": "met_data_sk", "prefix": "sk_slim", "file": "sk_wind",
+           "lat": (47.5, 61.5), "lon": (-118.0, -94.0), "block": 3, "slim_version": 2,
+           "min_stations": 30, "page": "SK_Air_Map"},
+    "sturgeon": {"out": "met_data_sturgeon", "prefix": "sturgeon_slim", "file": "sturgeon_wind",
+                 "lat": (53.5, 56.8), "lon": (-121.0, -114.0), "block": 2, "slim_version": 1,
+                 "min_stations": 5, "page": "Sturgeon Lake dashboard"},
+}
+REGION_NAME = sys.argv[1] if len(sys.argv) > 1 else "sk"
+if REGION_NAME not in REGIONS:
+    raise SystemExit(f"unknown region {REGION_NAME!r} (choose from {', '.join(REGIONS)})")
+REGION = REGIONS[REGION_NAME]
+OUT_DIR = ROOT / REGION["out"]
+PREFIX = REGION["prefix"]
+FILE_STEM = REGION["file"]
+LAT_MIN, LAT_MAX = REGION["lat"]
+LON_MIN, LON_MAX = REGION["lon"]
+BLOCK = REGION["block"]
+SLIM_VERSION = REGION["slim_version"]
 
 LOOKBACK_H = 6        # index starts this far before now (matches AB_winds/index.html)
 CONVERT_BACK_H = 72   # only convert full files valid within this window (the georef check needs
@@ -71,7 +91,7 @@ GEN_KEEP_H = 3        # older published generations are deleted after this
 # vector RMSE 2.30 -> 1.96 m/s (-15%), direction within 45 deg 97.1 -> 98.5 %.
 NUDGE_RADIUS_KM = 75   # best of 25-200 km
 NUDGE_FADE_H = 6       # forecast hours keep exp(-lead/6 h) of the last correction (never fading got worse than raw by +3 h)
-MIN_STATIONS = 30
+MIN_STATIONS = REGION["min_stations"]   # SK has ~200/h; the Sturgeon box ~10-20
 ALERT_LOG = Path("/opt/airquality/logs/sitrep_alerts.log")
 
 NAME_RE = re.compile(r"ab_met_(\d{8})_(\d{2})Z_f(\d{3})\.json\.gz$")
@@ -88,7 +108,7 @@ def parse_name(path):
 
 
 def slim_name(run, lead):
-    return f"sk_wind_{run:%Y%m%d_%HZ}_f{lead:03d}.json.gz"
+    return f"{FILE_STEM}_{run:%Y%m%d_%HZ}_f{lead:03d}.json.gz"
 
 
 def block_mean(a, j0, i0, ny, nx):
@@ -168,8 +188,8 @@ def main():
 
     # 2. model snapshots: newest run for every valid time from now-LOOKBACK_H-3h on
     best = {}
-    for path in OUT_DIR.glob("sk_wind_*.json.gz"):
-        m = re.search(r"sk_wind_(\d{8})_(\d{2})Z_f(\d{3})", path.name)
+    for path in OUT_DIR.glob(f"{FILE_STEM}_*.json.gz"):
+        m = re.search(FILE_STEM + r"_(\d{8})_(\d{2})Z_f(\d{3})", path.name)
         run = dt.datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H").replace(tzinfo=UTC)
         lead = int(m.group(3))
         valid = run + dt.timedelta(hours=lead)
@@ -250,13 +270,13 @@ def main():
         print("WARNING: no station data for any recent hour - publishing the unadjusted model")
         if was_ok:
             with open(ALERT_LOG, "a") as f:
-                f.write(f"{dt.datetime.now(UTC).isoformat(timespec='seconds')} ALERT sk_wind_slim: no ECCC station "
-                        f"winds for the last {LOOKBACK_H} h - SK_Air_Map animated winds are the plain model (unadjusted)\n")
+                f.write(f"{dt.datetime.now(UTC).isoformat(timespec='seconds')} ALERT {PREFIX.replace('_slim', '_wind_slim')}: no ECCC station "
+                        f"winds for the last {LOOKBACK_H} h - {REGION['page']} animated winds are the plain model (unadjusted)\n")
     else:
         print(f"adjusted to stations through {last_hour:%m-%d %HZ}")
         if not was_ok:
             with open(ALERT_LOG, "a") as f:
-                f.write(f"{dt.datetime.now(UTC).isoformat(timespec='seconds')} ALERT sk_wind_slim: resolved - "
+                f.write(f"{dt.datetime.now(UTC).isoformat(timespec='seconds')} ALERT {PREFIX.replace('_slim', '_wind_slim')}: resolved - "
                         f"station adjustment back (through {last_hour:%m-%d %HZ})\n")
     state_f.write_text(json.dumps({"ok": last_hour is not None}))
 
@@ -278,7 +298,7 @@ def main():
             "content-type": "application/json", "cache-control": "86400", "upsert": "true"})
         entries.append({"t": iso(valid), "run": iso(src["run"]), "lead": src["lead"], "path": name, "adjust": adj})
     index = {"generated": iso(now.replace(microsecond=0)),
-             "source": "HRDPS 10 m wind, adjusted to ECCC SWOB station winds (AB_winds/py/sk_wind_slim.py)",
+             "source": f"HRDPS 10 m wind, adjusted to ECCC SWOB station winds (AB_winds/py/sk_wind_slim.py {REGION_NAME})",
              "adjust": {"radius_km": NUDGE_RADIUS_KM, "fade_h": NUDGE_FADE_H},
              "entries": entries}
     store.upload(f"{PREFIX}/index.json", json.dumps(index, separators=(",", ":")).encode(), {
@@ -297,13 +317,13 @@ def main():
                 store.remove(files)
                 removed += len(files)
     old_root = [f"{PREFIX}/{it['name']}" for it in store.list(PREFIX, {"limit": 1000})
-                if it["name"].startswith("sk_wind_")]
+                if it["name"].startswith(FILE_STEM + "_")]
     if old_root:
         store.remove(old_root)
         removed += len(old_root)
     cutoff = now.timestamp() - LOCAL_KEEP_DAYS * 86400
     gone = 0
-    for p in OUT_DIR.glob("sk_wind_*.json.gz"):
+    for p in OUT_DIR.glob(f"{FILE_STEM}_*.json.gz"):
         if p.stat().st_mtime < cutoff:
             p.unlink()
             gone += 1
