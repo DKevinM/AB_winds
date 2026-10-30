@@ -46,6 +46,14 @@ SIGMA_FLOOR = 0.01   # m/s, residual turbulence floor (night/residual layer). Wa
 #                      read 2-8x low (Project Sagebrush 2016 nights; sonics measured sigma_w ~0.03 m/s). 0.01
 #                      left Prairie Grass, the backward check and Flesch 2004 unchanged.
 EPS_FLOOR = 1.0e-6   # m2/s3
+# Stable stratification limit on the Lagrangian timescales (2026-10-26): T_L <= TL_N_CAP / N, applied through
+# a floor on eps so all three components keep their sigma ratios (the longest, along-wind, sits at the cap;
+# vertical at (sigma_w/sigma_u)^2 of it). N from MOST: N^2 = u*^2 (1 + 5 z/L) / (kappa^2 z L). Without it the
+# model mixed very stable night plumes far too deep (Project Sagebrush 2016 towers: C(3 m)/C(1 m) measured
+# 0.02-0.10, modelled 0.4-0.95) and read ~2x low at 1 m. Validation (Sagebrush night excl. IOP6, per arc):
+# within x2 41% -> 48%, measured/model 2.17 -> 1.17; Prairie Grass stable 98% -> 100%, Flesch stable 92% -> 96%;
+# unstable cases untouched. 0.5/N over-suppressed moderately stable cases (PG/Flesch stable dropped).
+TL_N_CAP = 1.0
 
 
 def _arr(x):
@@ -228,6 +236,14 @@ def turbulence(z, ustar, L, zi, wstar=0.0, C0=C0_DEFAULT):
     sigu = np.maximum(sigu, 2 * SIGMA_FLOOR)
     sigv = np.maximum(sigv, 2 * SIGMA_FLOOR)
     eps = np.maximum(eps, EPS_FLOOR)
+
+    # stable stratification: T_L <= TL_N_CAP / N below zi
+    stable_bl = (L > 0) & ~above
+    if np.any(stable_bl):
+        Ls = np.where(L > 0, L, 1.0)
+        N = ustar / KAPPA * np.sqrt((1.0 + 5.0 * np.minimum(z / Ls, 50.0)) / (z * Ls))
+        smax = np.maximum(np.maximum(sigu, sigv), sigw)
+        eps = np.where(stable_bl, np.maximum(eps, 2.0 * smax ** 2 * N / (C0 * TL_N_CAP)), eps)
 
     TLu = 2.0 * sigu ** 2 / (C0 * eps)
     TLv = 2.0 * sigv ** 2 / (C0 * eps)

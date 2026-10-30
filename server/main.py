@@ -9,7 +9,7 @@ SASKATCHEWAN_TZ=ZoneInfo('America/Regina')
 
 ROOT=Path(__file__).resolve().parent.parent
 RUNS_DIR=ROOT/'live_runs'
-JOB_TIMEOUT_SECONDS=600
+JOB_TIMEOUT_SECONDS=900  # 2026-10-30: 600 -> 900, the stable T_L cap (micromet TL_N_CAP) makes very stable runs up to ~67% slower
 JOB_MAX_AGE_HOURS=48
 OUTPUT_FILES=['backtraj_centerlines.geojson','backtraj_cloud.geojson','backtraj_density.geojson']
 

@@ -78,7 +78,7 @@ def run_hrdps(station, event_dt, duration_hours, direction="backward", heights_m
     # hit mid-run.
     result = subprocess.run(
         [PYTHON_EXEC, BACKTRAJ_SCRIPT], cwd=AB_WINDS_ROOT,
-        env=env, capture_output=True, text=True, timeout=600,
+        env=env, capture_output=True, text=True, timeout=900,  # 2026-10-30: was 600; stable T_L cap slows very stable runs
     )
 
     centerlines_path = os.path.join(outdir, "backtraj_centerlines.geojson")
