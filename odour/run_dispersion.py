@@ -50,6 +50,7 @@ import landcover as lc            # noqa: E402
 import met_store as ms            # noqa: E402
 import observed_trace as ot       # noqa: E402
 import drainage as dr              # noqa: E402
+import uncertainty as unc         # noqa: E402
 
 NPRI_PATH = "/opt/airquality/dsai_data/npri_alberta.geojson"
 RANK_RADIUS_KM = 50.0
@@ -215,6 +216,11 @@ def main():
     dump("backtraj_windseries.json", windseries)
 
     hm = gp.hourly_met(met, lat, lon, times, height_m=10.0)
+    # how far off a concentration could be in this run's least certain hour, from the field-test residuals
+    # (the "Cfactor"; a correction factor failed cross-testing, the spread is what's reliable). 2026-11-01
+    u_note = unc.describe(hm)
+    if u_note:
+        notes["uncertainty"] = u_note
     t1 = time.time()
     if direction == "forward":
         field = gpf.run_puffs(met, lat, lon, start, hours=hours, direction="forward",
