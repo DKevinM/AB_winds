@@ -47,7 +47,11 @@ import requests
 
 FIRMS_BASE_URL = "https://firms.modaps.eosdis.nasa.gov"
 WESTERN_CANADA_BBOX = "-141,48.2,-88,78"  # west,south,east,north
-SOURCE = "VIIRS_SNPP_NRT"
+# 2026-11-20: VIIRS_SNPP_NRT has returned no rows since ~2026-11-02, so this layer (SNPP-only) went empty
+# and the flare history froze. Now NOAA-20 + NOAA-21 (+ SNPP, in case it comes back). Persistence counts
+# DAYS per cell, so more satellites don't change the threshold, just fill cloudy-day gaps.
+SOURCES = ("VIIRS_NOAA20_NRT", "VIIRS_NOAA21_NRT", "VIIRS_SNPP_NRT")
+BACKFILL_DAYS = 15   # --backfill: rebuild history from FIRMS (5-day windows, the API's day_range limit)
 # day_range counts back from "today" in FIRMS' own clock, and a request
 # with no explicit date defaults to today - which can have near-zero
 # rows for the first few hours after UTC midnight, before that day's
@@ -115,13 +119,46 @@ def main():
         print("FIRMS_API_KEY not set - skipping", file=sys.stderr)
         sys.exit(0)
 
-    url = f"{FIRMS_BASE_URL}/api/area/csv/{key}/{SOURCE}/{WESTERN_CANADA_BBOX}/{DAY_RANGE}"
-    r = requests.get(url, timeout=30)
-    r.raise_for_status()
-    rows = list(csv.DictReader(io.StringIO(r.text)))
-
     today = datetime.now(timezone.utc).date()
+    rows, ok = [], 0
+    for src in SOURCES:
+        try:
+            r = requests.get(f"{FIRMS_BASE_URL}/api/area/csv/{key}/{src}/{WESTERN_CANADA_BBOX}/{DAY_RANGE}", timeout=90)
+            r.raise_for_status()
+        except requests.RequestException as ex:
+            print(f"FIRMS {src}: {ex}", file=sys.stderr)
+            continue
+        ok += 1
+        got = list(csv.DictReader(io.StringIO(r.text)))
+        for row in got:
+            row["source"] = src
+        rows += got
+        print(f"FIRMS {src}: {len(got)} rows")
+    if not ok:
+        raise SystemExit("FIRMS: every source failed - keeping the previous file")
+
     history = _load_history()
+    if "--backfill" in sys.argv:
+        for src in SOURCES:
+            for back in range(BACKFILL_DAYS, 0, -5):      # FIRMS: the date is the window START (date .. date+4)
+                end = (today - timedelta(days=back)).isoformat()
+                try:
+                    r = requests.get(f"{FIRMS_BASE_URL}/api/area/csv/{key}/{src}/{WESTERN_CANADA_BBOX}/5/{end}", timeout=120)
+                    r.raise_for_status()
+                except requests.RequestException as ex:
+                    print(f"backfill {src} {end}: {ex}", file=sys.stderr)
+                    continue
+                n = 0
+                for row in csv.DictReader(io.StringIO(r.text)):
+                    lat, lon = _num(row.get("latitude")), _num(row.get("longitude"))
+                    cv = _confidence_value(row.get("confidence"))
+                    if lat is None or lon is None or (cv is not None and cv < MIN_CONFIDENCE) or not row.get("acq_date"):
+                        continue
+                    history.setdefault(_grid_key(lat, lon), [])
+                    if row["acq_date"] not in history[_grid_key(lat, lon)]:
+                        history[_grid_key(lat, lon)].append(row["acq_date"])
+                    n += 1
+                print(f"backfill {src} from {end}: {n} detections")
 
     candidates = []
     for row in rows:
@@ -155,6 +192,7 @@ def main():
             "acq_date": row.get("acq_date"),
             "acq_time": row.get("acq_time"),
             "daynight": row.get("daynight"),
+            "satellite": row.get("source", "").replace("VIIRS_", "").replace("_NRT", ""),
         }
         feature = {
             "type": "Feature",
