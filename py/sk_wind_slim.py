@@ -31,6 +31,7 @@
 # Regions (2026-10-27): `sk_wind_slim.py` = SK as above. `sk_wind_slim.py sturgeon` = the
 # Sturgeon Lake Cree Nation dashboard (Valleyview area, wide enough to take in Wonder
 # Valley and Grande Prairie): same pipeline, its own crop, local folder and storage prefix.
+# `sk_wind_slim.py ab` (2026-11-20) = LiveMap's members' ACA + WCAS maps (js/wind_anim.js).
 
 import datetime as dt
 import glob
@@ -67,6 +68,12 @@ REGIONS = {
     "sturgeon": {"out": "met_data_sturgeon", "prefix": "sturgeon_slim", "file": "sturgeon_wind",
                  "lat": (53.5, 56.8), "lon": (-121.0, -114.0), "block": 2, "slim_version": 1,
                  "min_stations": 5, "page": "Sturgeon Lake dashboard"},
+    # LiveMap members' ACA.html + WCAS.html (2026-11-20): WCAS opens at zoom 6 centred on
+    # 116.8W, which on a wide screen shows the BC coast to Manitoba, so the crop is the full
+    # HRDPS grid west edge (134W) to 100W. ~55 KB per time step over the wire.
+    "ab": {"out": "met_data_ab", "prefix": "ab_slim", "file": "ab_wind",
+           "lat": (48.0, 61.5), "lon": (-134.0, -100.0), "block": 3, "slim_version": 1,
+           "min_stations": 30, "page": "LiveMap ACA/WCAS"},
 }
 REGION_NAME = sys.argv[1] if len(sys.argv) > 1 else "sk"
 if REGION_NAME not in REGIONS:

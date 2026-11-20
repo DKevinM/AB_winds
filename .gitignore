@@ -4,6 +4,7 @@ live_runs/
 click_runs/
 met_data/
 met_data_sk/
+met_data_ab/
 dsai/data/
 # private: named-facility concentration estimates from NPRI releases (2026-10-22) - never publish
 odour_data/source_estimates.json
