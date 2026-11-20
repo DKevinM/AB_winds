@@ -251,8 +251,13 @@ def process_run(run):
         
         clean_payload = sanitize_json(payload)
         
-        with gzip.open(fname, "wt", encoding="utf-8") as f:
+        # Write under a temporary name, then rename. The LS model service
+        # globs ab_met_*.json.gz and read half-written files during a pull
+        # (EOFError on every "now" run, 2026-11-20 15:26 UTC).
+        tmp_fname = fname + ".part"
+        with gzip.open(tmp_fname, "wt", encoding="utf-8") as f:
             json.dump(clean_payload, f, allow_nan=False)
+        os.replace(tmp_fname, fname)
 
         print("Saved:", fname)
 
